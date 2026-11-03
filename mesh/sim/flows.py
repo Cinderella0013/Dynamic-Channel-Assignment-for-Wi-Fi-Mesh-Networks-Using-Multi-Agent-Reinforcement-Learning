@@ -20,6 +20,15 @@ def hops_to_gateway(adj, gateways, alive):
     return hops
 
 
+def min_hop_next_hop(adj, gateways, alive):
+    """Parent with one hop less toward a gateway (lowest id on ties); -1 if none."""
+    hops = hops_to_gateway(adj, gateways, alive)
+    nh = np.full(len(adj), -1, dtype=int)
+    for u in np.flatnonzero(hops > 0):
+        nh[u] = np.flatnonzero(adj[u] & alive & (hops == hops[u] - 1))[0]
+    return nh
+
+
 def paths_from_next_hop(next_hop, gateways, usable, alive):
     n = len(next_hop)
     gw = set(gateways)
