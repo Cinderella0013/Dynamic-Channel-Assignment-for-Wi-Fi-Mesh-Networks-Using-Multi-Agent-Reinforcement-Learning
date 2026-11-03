@@ -25,6 +25,7 @@ def run_episode(env, policy):
     out = {k: float(np.mean([i[k] for i in rows])) for k in MEAN_KEYS}
     out.update({k: float(sum(i[k] for i in rows)) for k in SUM_KEYS})
     out["reward"] = reward
+    out["loss_rate"] = float(sum(i["lost"] for i in rows) / max(sum(i["demand_total"] for i in rows), 1e-9))
     return out
 
 

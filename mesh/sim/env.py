@@ -18,6 +18,7 @@ EDGE_FEATS = ("is_link", "is_conflict", "snr_db", "rate_mbps", "load_frac", "sam
 class Action:
     channels: np.ndarray  # (n, 2) int in [0, N_CHANNELS)
     next_hop: np.ndarray  # (n,) int, -1 for gateways
+    queue_preserve: bool = False  # buffer queues across this step's switches (CSA-style)
 
 
 @dataclass
@@ -75,6 +76,11 @@ class MeshEnv:
         self.channels = np.tile([0, 1], (cfg.n, 1))
         self.next_hop = min_hop_next_hop(self.rg.link, self.gw, self.alive)
         self.demand = np.zeros(cfg.n)
+        self.offered = np.zeros(cfg.n)
+        self.backlog = np.zeros(cfg.n)
+        self.thr_hist = []
+        self.chan_down = np.zeros(cfg.n, dtype=int)
+        self.route_down = np.zeros(cfg.n, dtype=int)
         self.thr = np.zeros(cfg.n)
         self.load = np.zeros((cfg.n, cfg.n))
         self.cap = np.zeros((cfg.n, cfg.n))
@@ -112,26 +118,64 @@ class MeshEnv:
             raise RuntimeError("episode finished; call reset()")
         channels, next_hop = self._validate(action)
         cfg, t = self.cfg, self.t
+        q_max = 5.0 * cfg.mean_mbps
+        lost_switch = 0.0
         if cfg.failure_step == t:
             deg = np.where(self.is_gw, -1, self.rg.link.sum(axis=1))
-            self.alive[int(np.argmax(deg))] = False
+            dead = int(np.argmax(deg))
+            self.alive[dead] = False
+            lost_switch += self.backlog[dead]  # counted once, at death
+            self.backlog[dead] = 0.0
         noise = self._ext_noise(t)
         demand = self.traffic.demand(t) * self.alive * ~self.is_gw
+        offered = self.backlog + demand
+        src = self.alive & ~self.is_gw
 
+        # switching downtime: a node that retunes radio 1 cannot use links on that channel,
+        # a node that changes parent cannot use its uplink, for downtime_steps steps
+        sw_ch = (channels[:, 1] != self.channels[:, 1]) & self.alive
+        sw_rt = (next_hop != self.next_hop) & src
+        if cfg.downtime_steps > 0:
+            self.chan_down[sw_ch] = cfg.downtime_steps
+            self.route_down[sw_rt] = cfg.downtime_steps
         cc = self._cc(channels)
         rate = link_rate(self.rg, cc, noise)
-        paths = paths_from_next_hop(next_hop, self.gw, rate > 0, self.alive)
-        src = self.alive & ~self.is_gw
-        flows = src & (demand > 0)  # a node with no demand is not a flow
+        intr = (cc == channels[:, 1][:, None]) & (self.chan_down > 0)[:, None] & (cc >= 0)
+        for u in np.flatnonzero((self.route_down > 0) & (next_hop >= 0)):
+            intr[u, next_hop[u]] = True
+        intr |= intr.T
+        rate_now = np.where(intr, 0.0, rate)
+
+        planned = paths_from_next_hop(next_hop, self.gw, rate > 0, self.alive)
+        paths = paths_from_next_hop(next_hop, self.gw, rate_now > 0, self.alive)
+        flows = src & (offered > 0)  # a node with nothing to send is not a flow
         active = np.zeros_like(self.rg.link)
         for s in np.flatnonzero(flows):
             if paths[s] is not None:
                 for u, v in zip(paths[s], paths[s][1:]):
                     active[u, v] = True
-        cap = link_capacity(self.rg, cc, rate, active)
-        thr, load = allocate(paths, demand, cap)
+        cap = link_capacity(self.rg, cc, rate_now, active)
+        thr, load = allocate(paths, offered, cap)
 
-        flow_u = np.log(thr + self.w.eps)
+        # an unprepared switch drops the queue that was waiting on an interrupted hop
+        queue_loss = np.zeros(cfg.n)
+        if not (cfg.queue_preserve or action.queue_preserve):
+            for s in np.flatnonzero(flows):
+                p = planned[s]
+                if p is not None and any(intr[u, v] for u, v in zip(p, p[1:])):
+                    queue_loss[s] = self.backlog[s]
+        lost_switch += queue_loss.sum()
+        b = offered - thr - queue_loss
+        lost_overflow = float(np.maximum(b - q_max, 0.0).sum())
+        new_backlog = np.clip(b, 0.0, q_max)
+        self.chan_down = np.maximum(self.chan_down - 1, 0)
+        self.route_down = np.maximum(self.route_down - 1, 0)
+
+        # fairness and utility on throughput averaged over the last utility_window steps, so a
+        # 100 ms switching outage with a preserved queue is not scored as starvation
+        self.thr_hist = (self.thr_hist + [thr])[-cfg.utility_window:]
+        thr_w = np.mean(self.thr_hist, axis=0)
+        flow_u = np.log(thr_w + self.w.eps)
         local_u = np.zeros(cfg.n)
         for s in np.flatnonzero(flows):
             # a dropped flow is charged log(eps) at its source, so dropping never pays
@@ -139,15 +183,18 @@ class MeshEnv:
         n_sw = int(((channels != self.channels) & self.alive[:, None]).sum())
         n_rc = int(((next_hop != self.next_hop) & src).sum())
         n_drop = int(sum(1 for s in np.flatnonzero(flows) if paths[s] is None))
-        u = utility(thr[flows], self.w.eps)
+        u = utility(thr_w[flows], self.w.eps)
         reward = u - self.w.gamma * n_sw - self.w.delta * n_rc - self.w.eta * n_drop
 
         self.channels, self.next_hop = channels, next_hop
-        self.demand, self.thr, self.load, self.cap = demand, thr, load, cap
+        self.demand, self.offered, self.thr, self.load, self.cap = demand, offered, thr, load, cap
+        self.backlog = new_backlog
         self.t += 1
-        info = dict(throughput=thr, aggregate=float(thr[flows].sum()), jain=jain(thr[flows]),
-                    p5=p5(thr[flows]), utility=u, n_channel_switch=n_sw, n_route_change=n_rc,
-                    n_drop=n_drop, local_utility=local_u, done=self.t == cfg.episode_len)
+        info = dict(throughput=thr, aggregate=float(thr[flows].sum()), jain=jain(thr_w[flows]),
+                    p5=p5(thr_w[flows]), utility=u, n_channel_switch=n_sw, n_route_change=n_rc,
+                    n_drop=n_drop, local_utility=local_u, done=self.t == cfg.episode_len,
+                    lost=float(lost_switch + lost_overflow), demand_total=float(demand.sum()),
+                    backlog_total=float(self.backlog.sum()))
         # observation reflects the step just executed (no lookahead on the interferer)
         return self._observe(noise), float(reward), info
 
@@ -155,7 +202,7 @@ class MeshEnv:
         rg = self.rg
         hops = hops_to_gateway(rg.link, self.gw, self.alive)
         hops = np.where(hops < 0, self.cfg.n, hops)  # unreachable = n, never closer than a gateway
-        node_feat = np.stack([self.demand, self.demand - self.thr, self.is_gw,
+        node_feat = np.stack([self.demand, self.offered - self.thr, self.is_gw,
                               hops, self.alive], axis=1).astype(np.float32)
         cc = self._cc(self.channels)
         rate = link_rate(rg, cc, noise)

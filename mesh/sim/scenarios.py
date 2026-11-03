@@ -14,6 +14,9 @@ class ScenarioConfig:
     shift_step: int | None = None
     ext_interf: tuple[int, int, int, float] | None = None  # (channel_idx, start, end, noise_dbm)
     failure_step: int | None = None
+    downtime_steps: int = 1          # steps a switching node cannot send (802.11 switch + re-association)
+    queue_preserve: bool = False     # CSA-style buffering for every action (fairness setting b)
+    utility_window: int = 10         # steps (1 s): proportional fairness on windowed throughput
 
 
 _SCENARIOS = {

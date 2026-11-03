@@ -53,10 +53,10 @@ def test_ko_reroutes_right_after_failure():
         obs = env.reset()
         ko = KoLocalCost()
         reachable_drops = 0
-        for t in range(111):
+        for t in range(112):
             obs, _, info = env.step(ko.act(obs))
             reachable = (obs.node_feat[:, 3] >= 0) & (obs.node_feat[:, 4] > 0) & (obs.node_feat[:, 2] == 0)
-            if t >= 101:
+            if t >= 102:   # reroute at t=101 costs one step of switching downtime (Plan 6a)
                 reachable_drops += int(((env.demand > 0) & (info["throughput"] == 0) & reachable).sum())
         # nodes cut off by the failure drop unavoidably; every reachable node must be rerouted at once
         assert reachable_drops == 0, seed
