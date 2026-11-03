@@ -37,9 +37,14 @@ def test_learns_constant_best_action():
         ag.act(obs, explore=True)
         a = ag.last_action_idx
         ag.learn(obs, a, np.where(a == 5, 1.0, 0.0), obs, done=True)
-    ag.act(obs, explore=False)
+    # check the learned heads directly: greedy eval decoding spreads channels on purpose
+    import torch
+    p = ag.prepare(obs)
+    with torch.no_grad():
+        out = ag._tensors([p], torch.zeros(1, 20, 64))
+    best = out["chan_logits"][0].argmax(-1) * 4 + out["route_logits"][0].argmax(-1)
     nongw = [i for i in range(20) if i not in obs.gateways]
-    assert (ag.last_action_idx[nongw] == 5).mean() > 0.8
+    assert (best[nongw] == 5).float().mean() > 0.8
 
 
 def test_reward_lam_anneals():
