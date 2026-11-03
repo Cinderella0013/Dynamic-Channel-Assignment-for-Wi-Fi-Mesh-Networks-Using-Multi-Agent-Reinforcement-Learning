@@ -1,4 +1,6 @@
 """EGATAgent: EGAT-MAPPO learner with the Plan 3 learner interface (act / learn / save / load)."""
+import copy
+
 import numpy as np
 import torch
 
@@ -29,6 +31,8 @@ class EGATAgent:
         self.fallback_rate = 0.0
         self._pending = None
         self.bc_buf, self.buf = [], []
+        self.bc_net = None
+        self.total_steps = 100_000
 
     # ---------- inputs ----------
     def progress_mask(self, obs, slots):
@@ -58,9 +62,15 @@ class EGATAgent:
                     cur_chan=np.clip(obs.channels[:, 1] - 1, 0, N_DL_CH - 1),
                     is_chan_step=bool((not self.cfg.two_timescale) or obs.t % self.cfg.t_c == 0))
 
-    def _tensors(self, items, h_prev):
+    def _tensors(self, items, h_prev, net=None):
         t = {k: torch.as_tensor(np.stack([it[k] for it in items]), device=self.device) for k in _INPUT_KEYS}
-        return self.net(t["x"], t["e"], t["adj"], h_prev, t["ko_slot"], t["ko_chan"], t["slot_mask"])
+        return (net or self.net)(t["x"], t["e"], t["adj"], h_prev, t["ko_slot"], t["ko_chan"], t["slot_mask"])
+
+    def _bc_tensors(self, items, h_prev):
+        return self._tensors(items, h_prev, net=self.bc_net)
+
+    def set_budget(self, steps):
+        self.total_steps = steps
 
     # ---------- acting ----------
     def act(self, obs, explore=False):
@@ -157,6 +167,11 @@ class EGATAgent:
         ent = -(lr.exp() * lr).sum(-1) - is_chan[:, None] * (lc.exp() * lc).sum(-1)
         return logp, ent
 
+    @staticmethod
+    def _kl(logits_p, logits_q):
+        lp, lq = torch.log_softmax(logits_p, -1), torch.log_softmax(logits_q, -1)
+        return (lp.exp() * (lp - lq)).sum(-1)
+
     def update(self, last_obs):
         cfg, buf = self.cfg, self.buf
         rewards = np.stack([b["rewards"] for b in buf])
@@ -192,6 +207,12 @@ class EGATAgent:
                 pg = -torch.min(ratio * a_t, ratio.clamp(1 - cfg.clip, 1 + cfg.clip) * a_t)
                 vl = (out["value"] - r_t) ** 2
                 per = pg + cfg.value_coef * vl - cfg.entropy * ent
+                if self.bc_net is not None:  # v1: stay near the BC policy (AlphaStar-style anchor)
+                    with torch.no_grad():
+                        ref = self._bc_tensors(items, h_prev)
+                    kl = self._kl(out["route_logits"], ref["route_logits"])                         + is_chan[:, None] * self._kl(out["chan_logits"], ref["chan_logits"])
+                    f = min(self.steps / max(self.total_steps, 1), 1.0)
+                    per = per + (cfg.kl_start + f * (cfg.kl_end - cfg.kl_start)) * kl
                 loss = (per * m).sum() / m.sum().clamp(min=1)
                 self.opt.zero_grad()
                 loss.backward()
@@ -257,6 +278,12 @@ class EGATAgent:
             if stats["agreement"] >= 0.9:
                 break
         self.bc_buf = []
+        if cfg.use_kl_anchor:
+            self.bc_net = copy.deepcopy(self.net).eval()
+            self.bc_net.requires_grad_(False)
+        if cfg.lr_after_bc is not None:
+            for g in self.opt.param_groups:
+                g["lr"] = cfg.lr_after_bc
         return stats
 
     def agreement(self, obs):
@@ -287,3 +314,11 @@ class EGATAgent:
         ag.phase, ag.steps = ck["phase"], ck["steps"]
         ag.fallback_rate = ck["fallback_rate"]
         return ag  # unfinished BC data is not saved: a BC-phase checkpoint resumes with an empty buffer
+
+
+class EGATv1Agent(EGATAgent):
+    """EGAT v1 (spec addendum 3): KL anchor to BC, fixed lambda = 0.1, semi-MDP channel credit, lr 1e-4 after BC."""
+
+    def __init__(self, seed=0, device=None, **cfg_overrides):
+        defaults = dict(use_kl_anchor=True, semi_mdp=True, lam_start=0.1, lam_end=0.1, lr_after_bc=1e-4)
+        super().__init__(seed=seed, device=device, **{**defaults, **cfg_overrides})

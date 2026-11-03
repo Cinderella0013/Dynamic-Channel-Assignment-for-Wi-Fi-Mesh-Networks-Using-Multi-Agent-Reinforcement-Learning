@@ -45,6 +45,12 @@ class EGATConfig:
     lam_start: float = 0.5
     lam_end: float = 0.1
     fallback_entropy: float = 2.0
+    # v1 (spec addendum 3): anchor PPO to the BC policy, n-step channel credit, lower lr after BC
+    use_kl_anchor: bool = False
+    kl_start: float = 0.1
+    kl_end: float = 0.01
+    semi_mdp: bool = False
+    lr_after_bc: float | None = None
 
 
 def _mlp(*sizes):
