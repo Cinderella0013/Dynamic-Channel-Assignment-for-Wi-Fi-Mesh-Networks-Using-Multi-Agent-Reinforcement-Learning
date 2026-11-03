@@ -31,6 +31,14 @@ class Observation:
     t: int
 
 
+def edge_matrix(obs, name):
+    """Dense (n, n) view of one edge feature; 0 where there is no edge."""
+    n = len(obs.node_feat)
+    m = np.zeros((n, n))
+    m[obs.edge_index[0], obs.edge_index[1]] = obs.edge_attr[:, EDGE_FEATS.index(name)]
+    return m
+
+
 @dataclass(frozen=True)
 class RewardWeights:
     eps: float = 0.01
