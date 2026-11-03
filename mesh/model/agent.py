@@ -87,7 +87,8 @@ class EGATAgent:
             j = torch.multinomial(route.probs, 1, generator=self.gen)[:, 0]
             c = torch.multinomial(chan.probs, 1, generator=self.gen)[:, 0]
         else:
-            j, c = route.probs.argmax(-1), chan.probs.argmax(-1)
+            j = route.probs.argmax(-1)
+            c = self._greedy_channels(obs, p, chan.logits, j.numpy())
         if not p["is_chan_step"]:
             c = torch.as_tensor(p["cur_chan"])
         a = (c * K_SLOTS + j).numpy()
@@ -108,6 +109,30 @@ class EGATAgent:
                              value=out["value"][0].cpu().numpy(), is_chan_step=p["is_chan_step"])
         self.last_action_idx = a
         return decode(obs, p["slots"], a)
+
+    def _greedy_channels(self, obs, p, logits, j):
+        """Sequential conflict-aware argmax, parents first (like Ko's round).
+
+        Channel labels are interchangeable, so a plain per-node argmax gives every node the same
+        channel when they see the same state. Each node takes its best channel not already taken
+        by a decided conflict neighbour (or the least-used one if all are taken).
+        """
+        n = len(j)
+        slots = p["slots"]
+        parent = np.where(p["slot_mask"][np.arange(n), j], slots[np.arange(n), j], -1)
+        depth = np.zeros(n, dtype=int)
+        for u in range(n):
+            v, d = u, 0
+            while parent[v] >= 0 and d <= n:
+                v, d = parent[v], d + 1
+            depth[u] = d
+        conflict = p["adj"] & ~np.eye(n, dtype=bool)
+        logits = logits.numpy()
+        c = np.full(n, -1, dtype=int)
+        for u in sorted(range(n), key=lambda u: (depth[u], u)):
+            used = np.bincount(c[conflict[u] & (c >= 0)], minlength=N_DL_CH)
+            c[u] = int(np.argmax(logits[u] - 1e3 * used))
+        return torch.as_tensor(c)
 
     # ---------- learning ----------
     def reward_lam(self, step, total):
@@ -202,3 +227,72 @@ class EGATAgent:
                 stats["approx_kl"] += (((old - logp) * m).sum() / k).item()
                 n_mb += 1
         return {key: val / max(n_mb, 1) for key, val in stats.items()}
+
+    # ---------- behaviour cloning from Ko ----------
+    def bc_fit(self):
+        cfg, buf, dev = self.cfg, self.bc_buf, self.device
+        T = len(buf)
+        rewards = np.stack([b["rewards"] for b in buf])
+        dones = np.array([b["done"] for b in buf])
+        ret = np.zeros_like(rewards, dtype=np.float64)
+        running = np.zeros(rewards.shape[1])
+        for t in reversed(range(T)):  # Monte-Carlo returns of Ko's own trajectories
+            running = rewards[t] + cfg.gamma * (1.0 - dones[t]) * running
+            ret[t] = running
+        opt = torch.optim.Adam(self.net.parameters(), lr=cfg.bc_lr)
+        self.net.train()
+        stats = {}
+        for epoch in range(cfg.bc_epochs):
+            order = np.random.default_rng(self.seed + epoch).permutation(T)
+            hits = total = 0
+            tot = dict(bc_loss=0.0, vko_loss=0.0)
+            for start in range(0, T, cfg.minibatch):
+                idx = order[start:start + cfg.minibatch]
+                items = [buf[i]["p"] for i in idx]
+                out = self._tensors(items, torch.stack([buf[i]["h_prev"] for i in idx]).to(dev))
+                a = np.stack([buf[i]["a"] for i in idx])
+                j = torch.as_tensor(a % K_SLOTS, device=dev).long()
+                c = torch.as_tensor(a // K_SLOTS, device=dev).long()
+                is_chan = torch.as_tensor([float(it["is_chan_step"]) for it in items], device=dev)[:, None]
+                alive = torch.as_tensor(np.stack([it["alive"] for it in items]), device=dev).float()
+                # Ko may pick an equal-hop parent the progress mask forbids: no route target there
+                allowed = torch.as_tensor(np.stack([it["slot_mask"] for it in items]), device=dev)
+                allowed = allowed.gather(-1, j[..., None])[..., 0].float()
+                ce_r = torch.nn.functional.cross_entropy(out["route_logits"].transpose(1, 2), j, reduction="none")
+                ce_c = torch.nn.functional.cross_entropy(out["chan_logits"].transpose(1, 2), c, reduction="none")
+                g = torch.as_tensor(ret[idx], device=dev, dtype=torch.float32)
+                v_l = (out["value"] - g) ** 2 + (out["value_ko"] - g) ** 2
+                per = allowed * ce_r + is_chan * ce_c + 0.5 * v_l
+                loss = (per * alive).sum() / alive.sum().clamp(min=1)
+                opt.zero_grad()
+                loss.backward()
+                torch.nn.utils.clip_grad_norm_(self.net.parameters(), 1.0)
+                opt.step()
+                with torch.no_grad():
+                    ok = out["route_logits"].argmax(-1) == j
+                    ok &= (is_chan == 0) | (out["chan_logits"].argmax(-1) == c)
+                    hits += (ok.float() * alive).sum().item()
+                    total += alive.sum().item()
+                tot["bc_loss"] += ((allowed * ce_r + is_chan * ce_c) * alive).sum().item() / max(alive.sum().item(), 1)
+                tot["vko_loss"] += (((out["value_ko"] - g) ** 2) * alive).sum().item() / max(alive.sum().item(), 1)
+            n_mb = int(np.ceil(T / cfg.minibatch))
+            stats = dict(agreement=hits / max(total, 1), bc_loss=tot["bc_loss"] / n_mb, vko_loss=tot["vko_loss"] / n_mb)
+            if stats["agreement"] >= 0.9:
+                break
+        self.net.value_ko.requires_grad_(False)
+        self.vko_ready = True
+        self.bc_buf = []
+        return stats
+
+    def agreement(self, obs):
+        n = len(obs.node_feat)
+        p = self.prepare(obs)
+        self.net.eval()
+        with torch.no_grad():
+            out = self._tensors([p], torch.zeros(1, n, self.cfg.hidden, device=self.device))
+        j = out["route_logits"][0].argmax(-1).cpu().numpy()
+        ko = ko_action_idx(obs, p["slots"], KoLocalCost())
+        # route agreement only: channel labels are interchangeable, so exact-label match with Ko
+        # is not a meaningful imitation target (see _greedy_channels)
+        ok = j == ko % K_SLOTS
+        return float(ok[p["alive"]].mean())

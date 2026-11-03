@@ -63,3 +63,10 @@ def test_gru_state_resets_each_episode():
     for _ in range(5):
         obs, _, _ = env.step(ag.act(obs))
     assert np.array_equal(ag.act(env.reset()).next_hop, first)
+
+
+def test_greedy_channels_are_diverse():
+    env, obs = _env()
+    ag = EGATAgent(seed=0, use_bc=False, use_fallback=False, device="cpu")
+    a = ag.act(obs, explore=False)                     # t=0: every node sees identical channel state
+    assert len(np.unique(a.channels[:, 1])) >= 3

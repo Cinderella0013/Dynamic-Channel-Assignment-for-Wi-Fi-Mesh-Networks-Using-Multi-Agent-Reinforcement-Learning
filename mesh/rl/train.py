@@ -4,6 +4,7 @@ import time
 
 import numpy as np
 
+from mesh.model.agent import EGATAgent
 from mesh.rl.agents_io import per_agent_reward
 from mesh.rl.li_gat_a2c import LiAgent
 from mesh.rl.q_neutral import QNeutral
@@ -11,7 +12,7 @@ from mesh.rl.yuan_gqn import YuanAgent
 from mesh.sim.env import MeshEnv
 from mesh.sim.scenarios import make_scenario
 
-LEARNERS = {"q_neutral": QNeutral, "yuan": YuanAgent, "li": LiAgent}
+LEARNERS = {"q_neutral": QNeutral, "yuan": YuanAgent, "li": LiAgent, "egat": EGATAgent}
 SCENARIOS = ("S1", "S2", "S3", "S4", "S5", "S6")
 
 
