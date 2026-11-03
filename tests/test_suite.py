@@ -39,3 +39,15 @@ def test_suite_runs_zero_shot_sizes():
         ag = train(name, steps=300, seed=0, n=10, log_every=10**9, **kw)
         m = run_episode(MeshEnv(make_scenario("C4"), 0), ag)
         assert np.isfinite(m["reward"]), name
+
+
+def test_factory_resolves_variant_label(tmp_path):
+    from mesh.eval.suite import _factory
+    from mesh.model.agent import EGATv1Agent
+    path = tmp_path / "m.pt"
+    EGATv1Agent(seed=0).save(str(path))
+    name, f = _factory(f"egat_v1_oracle={path}")
+    assert name == "egat_v1_oracle" and type(f()).__name__ == "EGATv1Agent"
+    import pytest
+    with pytest.raises(ValueError):
+        _factory(f"nope={path}")

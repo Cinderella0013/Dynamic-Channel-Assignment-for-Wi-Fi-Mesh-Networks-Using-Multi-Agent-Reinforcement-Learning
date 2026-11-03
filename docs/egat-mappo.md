@@ -97,3 +97,29 @@ input (obs + ACK + backlog)
 ## Checkpoint selection (all learners)
 
 `--val-every 10000` evaluates the current policy greedily on S1–S6 with validation seeds 1000–1002, which are never used for testing. The checkpoint kept is the one with the best mean validation reward. Candidates are every validation point, the end of BC and the final policy. Validation runs only between training episodes, and its env steps do not count toward the training budget.
+
+## Oracle teacher (`--teacher oracle`, EGAT v1/v2)
+
+Spec: `docs/superpowers/specs/2026-11-04-oracle-teacher-design.md`.
+
+The BC phase normally imitates Ko. With `--teacher oracle`, it imitates `LookaheadOracle` (`mesh/baselines/oracle.py`).
+
+How the oracle decides:
+- Every 10 steps it starts from Ko's action and makes one coordinate pass over the nodes.
+- For each node it tries every downlink channel and every valid parent.
+- It keeps a candidate if the env reward summed over the next 10 steps improves. It scores this on a copy of the live env, so it knows future traffic.
+- Between rounds it holds its action, but follows Ko's reroute when a parent breaks.
+
+The oracle is privileged and is used only during training:
+- `train()` binds a fresh oracle to each BC episode's env.
+- It puts `KoLocalCost` back at every episode end and once BC finishes.
+- So validation, the RL phase and evaluation never see the oracle.
+
+The RL phase, the reward and checkpoint selection are unchanged.
+
+Cost: about 0.45 s per step during BC, which adds about 75 min to a 10k-step BC phase.
+
+Naming and headroom:
+- Checkpoints are `egat_v{1,2}_oracle_s<k>.pt`.
+- Evaluate them with `--method egat_v1_oracle=<ckpt>`. The suite maps a label to the longest learner name that prefixes it.
+- Headroom reference: on A+B (3 seeds) the oracle itself scores +0.287 composite over Ko (`runs/oracle/oracle_h10_reward.json`).

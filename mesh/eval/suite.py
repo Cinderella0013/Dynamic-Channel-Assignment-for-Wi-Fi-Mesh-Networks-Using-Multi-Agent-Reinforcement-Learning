@@ -45,7 +45,10 @@ def _factory(spec):
     if not path:
         return name, POLICIES[name]
     from mesh.rl.train import LEARNERS  # torch only when a learner is evaluated
-    trained = LEARNERS[name].load(path)
+    base = max((k for k in LEARNERS if name.startswith(k)), key=len, default=None)  # egat_v1_oracle -> egat_v1
+    if base is None:
+        raise ValueError(f"unknown learner label {name!r}")
+    trained = LEARNERS[base].load(path)
     return name, lambda: trained
 
 
