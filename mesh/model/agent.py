@@ -15,8 +15,10 @@ _INPUT_KEYS = ("x", "e", "adj", "ko_slot", "ko_chan", "slot_mask")
 
 
 class EGATAgent:
+    config_cls = EGATConfig
+
     def __init__(self, seed=0, device=None, **cfg_overrides):
-        self.cfg = EGATConfig(**cfg_overrides)
+        self.cfg = self.config_cls(**cfg_overrides)
         self.seed = seed
         self.device = torch.device(device or ("cuda" if torch.cuda.is_available() else "cpu"))
         torch.manual_seed(seed)

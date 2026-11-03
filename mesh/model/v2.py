@@ -1,10 +1,16 @@
 """EGAT v2 (spec addendum 4, the user's design): GAT-Q scores -> RAES ordered channel reservation
 -> migration refinement -> execute with queue preservation -> ACK feeds the next round."""
+import copy
 import math
+from dataclasses import dataclass
 
 import numpy as np
+import torch
 
-from mesh.rl.agents_io import N_DL_CH, alive_mask
+from mesh.model.agent import EGATAgent
+from mesh.model.egat import EGATConfig
+from mesh.model.ko_prior import ko_action_idx
+from mesh.rl.agents_io import K_SLOTS, N_DL_CH, alive_mask, decode
 from mesh.sim.env import NODE_FEATS, edge_matrix
 
 
@@ -91,3 +97,210 @@ def refine(obs, slots, c, j, ch_score, q_rt, cooldown_left, margin=0.1, k_frac=0
         if not (conflict[u] & moved).any():
             moved[u] = True
     return np.where(moved, c, c_cur), np.where(moved, j, j_cur), moved
+
+
+@dataclass
+class V2Config(EGATConfig):
+    # Double DQN on executed actions (the planner rewrites the argmax, so learning is off-policy)
+    use_ko_prior: bool = False
+    use_fallback: bool = False
+    lam_start: float = 0.1
+    lam_end: float = 0.1
+    replay_size: int = 50_000
+    batch: int = 32
+    tau: float = 0.01
+    eps_start: float = 0.3
+    eps_end: float = 0.02
+    eps_decay: int = 50_000
+    dqfd_margin: float = 0.8
+    # planner
+    raes: bool = True
+    migration_control: bool = True
+    queue_preserve: bool = True
+    raes_order: str = "backlog"
+    a: float = 1.0
+    b: float = 1.0
+    g: float = 1.0
+    margin: float = 0.1
+    k_frac: float = 0.1
+    cooldown: int = 3
+
+
+class EGATv2Agent(EGATAgent):
+    """GAT-Q + RAES + migration control + queue preservation. Q(u, c*K+j) = Q_ch(u,c) + Q_rt(u,j)."""
+    config_cls = V2Config
+
+    def __init__(self, seed=0, device=None, **cfg_overrides):
+        super().__init__(seed=seed, device=device, **cfg_overrides)
+        self.target = copy.deepcopy(self.net)
+        self.target.requires_grad_(False)
+        self.replay, self.replay_pos = [], 0
+        self.cool = None
+        self.rng = np.random.default_rng(seed)
+        self._cache = (None, None)
+
+    def _q(self, items, h, net=None):
+        # Q heads see every slot; the planner and the TD target apply masks, so the executed
+        # (possibly current, non-progress) parent always has a finite Q value
+        items = [dict(it, slot_mask=np.ones_like(it["slot_mask"])) for it in items]
+        return self._tensors(items, h, net=net)
+
+    def _prep(self, obs):
+        key, val = self._cache
+        return val if key is obs else self.prepare(obs)
+
+    def reward_lam(self, step, total):
+        return self.cfg.lam_start
+
+    def _eps(self):
+        start = self.cfg.bc_steps if self.cfg.use_bc else 0
+        f = min(max(self.steps - start, 0) / self.cfg.eps_decay, 1.0)
+        return self.cfg.eps_start + f * (self.cfg.eps_end - self.cfg.eps_start)
+
+    def act(self, obs, explore=False):
+        cfg, n = self.cfg, len(obs.node_feat)
+        if obs.t == 0 or self.h is None or self.h.shape[0] != n:
+            self.h = torch.zeros(n, cfg.hidden, device=self.device)
+            self.cool = np.zeros(n, dtype=int)
+        p = self._prep(obs)
+        h_prev = self.h
+        self.net.eval()
+        with torch.no_grad():
+            out = self._q([p], h_prev[None])
+        self.h = out["h"][0]
+        q_ch = out["chan_logits"][0].cpu().numpy()
+        q_rt = out["route_logits"][0].cpu().numpy()
+        mask = p["slot_mask"]
+
+        if self.phase == "bc" and explore:  # behave as Ko (DQfD demonstrations)
+            a = ko_action_idx(obs, p["slots"], self.ko)
+        else:
+            if explore:
+                noisy = self.rng.random(n) < self._eps()
+                q_ch[noisy] = self.rng.normal(size=(noisy.sum(), N_DL_CH))
+                q_rt[noisy] = self.rng.normal(size=(noisy.sum(), K_SLOTS))
+            if cfg.raes:
+                c, j, score = raes(obs, p["slots"], q_ch, q_rt, mask, cfg.a, cfg.b, cfg.g, cfg.raes_order)
+            else:
+                c, j, score = q_ch.argmax(1), np.where(mask, q_rt, -np.inf).argmax(1), _z(q_ch)
+            self.cool = np.maximum(self.cool - 1, 0)
+            if cfg.migration_control:
+                c, j, moved = refine(obs, p["slots"], c, j, score, np.where(mask, q_rt, 0.0), self.cool,
+                                     cfg.margin, cfg.k_frac)
+                self.cool[moved] = cfg.cooldown
+            a = c * K_SLOTS + j
+        action = decode(obs, p["slots"], a)
+        action.queue_preserve = cfg.queue_preserve
+        self._pending = dict(p=p, h_prev=h_prev.cpu())
+        self.last_action_idx = a
+        return action
+
+    def learn(self, obs, action_idx, rewards, next_obs, done):
+        self.steps += 1
+        p_next = self.prepare(next_obs)
+        self._cache = (next_obs, p_next)
+        item = dict(p=self._pending["p"], h_prev=self._pending["h_prev"], a=np.asarray(action_idx),
+                    r=np.asarray(rewards, np.float32), p_next=p_next, h_next=self.h.cpu(), done=float(done),
+                    alive=self._pending["p"]["alive"])
+        if self.phase == "bc":
+            self.bc_buf.append(item)
+            if len(self.bc_buf) >= self.cfg.bc_steps:
+                info = self.bc_fit()
+                self.phase = "rl"
+                return info
+            return {}
+        self._push(item)
+        return self.update() if len(self.replay) >= self.cfg.batch else {}
+
+    def _push(self, item):
+        if len(self.replay) < self.cfg.replay_size:
+            self.replay.append(item)
+        else:
+            self.replay[self.replay_pos] = item
+        self.replay_pos = (self.replay_pos + 1) % self.cfg.replay_size
+
+    def _td(self, batch):
+        cfg, dev = self.cfg, self.device
+
+        def st(key, dtype=torch.float32):
+            return torch.as_tensor(np.stack([b[key] for b in batch]), device=dev, dtype=dtype)
+
+        a, r, done, alive = st("a", torch.long), st("r"), st("done"), st("alive")
+        mask_next = torch.as_tensor(np.stack([b["p_next"]["slot_mask"] for b in batch]), device=dev)
+        h = torch.stack([b["h_prev"] for b in batch]).to(dev)
+        h_next = torch.stack([b["h_next"] for b in batch]).to(dev)
+        out = self._q([b["p"] for b in batch], h)
+        j, c = a % K_SLOTS, a // K_SLOTS
+        q_sa = out["chan_logits"].gather(-1, c[..., None])[..., 0] + out["route_logits"].gather(-1, j[..., None])[..., 0]
+        with torch.no_grad():  # Double DQN per head: the online net picks, the target net scores
+            nxt = [b["p_next"] for b in batch]
+            on, tg = self._q(nxt, h_next), self._q(nxt, h_next, net=self.target)
+            c2 = on["chan_logits"].argmax(-1)
+            j2 = on["route_logits"].masked_fill(~mask_next, -1e9).argmax(-1)
+            q_next = tg["chan_logits"].gather(-1, c2[..., None])[..., 0] + tg["route_logits"].gather(-1, j2[..., None])[..., 0]
+            y = r + cfg.gamma * (1 - done)[:, None] * q_next
+        td = torch.nn.functional.smooth_l1_loss(q_sa, y, reduction="none")
+        return out, td, a, alive
+
+    def _step(self, loss):
+        self.opt.zero_grad()
+        loss.backward()
+        torch.nn.utils.clip_grad_norm_(self.net.parameters(), 10.0)
+        self.opt.step()
+        with torch.no_grad():
+            for p, tp in zip(self.net.parameters(), self.target.parameters()):
+                tp.mul_(1 - self.cfg.tau).add_(self.cfg.tau * p)
+
+    def update(self, last_obs=None):
+        self.net.train()
+        idx = self.rng.choice(len(self.replay), self.cfg.batch, replace=False)
+        _, td, _, alive = self._td([self.replay[i] for i in idx])
+        loss = (td * alive).sum() / alive.sum().clamp(min=1)
+        self._step(loss)
+        return {"loss": loss.item()}
+
+    def bc_fit(self):
+        """DQfD warm start: large-margin loss toward Ko's actions per head plus TD; demos then go to replay."""
+        cfg, buf, dev = self.cfg, self.bc_buf, self.device
+        self.target.load_state_dict(self.net.state_dict())
+        self.net.train()
+        stats = {}
+        for _ in range(cfg.bc_epochs):
+            order = self.rng.permutation(len(buf))
+            tot, nb = 0.0, 0
+            for start in range(0, len(buf), cfg.batch):
+                batch = [buf[i] for i in order[start:start + cfg.batch]]
+                out, td, a, alive = self._td(batch)
+                j, c = a % K_SLOTS, a // K_SLOTS
+                mask = torch.as_tensor(np.stack([b["p"]["slot_mask"] for b in batch]), device=dev)
+                mask = mask.scatter(-1, j[..., None], True)
+                one_c = torch.nn.functional.one_hot(c, N_DL_CH).float()
+                one_j = torch.nn.functional.one_hot(j, K_SLOTS).float()
+                lc = out["chan_logits"] + cfg.dqfd_margin * (1 - one_c)
+                lr = (out["route_logits"] + cfg.dqfd_margin * (1 - one_j)).masked_fill(~mask, -1e9)
+                margin = (lc.max(-1).values - (out["chan_logits"] * one_c).sum(-1)) \
+                    + (lr.max(-1).values - (out["route_logits"] * one_j).sum(-1))
+                loss = ((margin + td) * alive).sum() / alive.sum().clamp(min=1)
+                self._step(loss)
+                tot, nb = tot + loss.item(), nb + 1
+            stats = {"bc_loss": tot / max(nb, 1)}
+        self.target.load_state_dict(self.net.state_dict())
+        for item in buf:
+            self._push(item)
+        self.bc_buf = []
+        return stats
+
+    def save(self, path):
+        torch.save(dict(cfg=vars(self.cfg), seed=self.seed, net=self.net.state_dict(),
+                        target=self.target.state_dict(), opt=self.opt.state_dict(), phase=self.phase,
+                        steps=self.steps), path)
+
+    @classmethod
+    def load(cls, path, device=None):
+        ck = torch.load(path, map_location="cpu")
+        ag = cls(seed=ck["seed"], device=device, **ck["cfg"])
+        ag.net.load_state_dict(ck["net"])
+        ag.target.load_state_dict(ck["target"])
+        ag.opt.load_state_dict(ck["opt"])
+        ag.phase, ag.steps = ck["phase"], ck["steps"]
+        return ag
