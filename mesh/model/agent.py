@@ -296,3 +296,21 @@ class EGATAgent:
         # is not a meaningful imitation target (see _greedy_channels)
         ok = j == ko % K_SLOTS
         return float(ok[p["alive"]].mean())
+
+    # ---------- checkpoints ----------
+    def save(self, path):
+        torch.save(dict(cfg=vars(self.cfg), seed=self.seed, net=self.net.state_dict(), opt=self.opt.state_dict(),
+                        phase=self.phase, steps=self.steps, vko_ready=self.vko_ready,
+                        fallback_rate=self.fallback_rate), path)
+
+    @classmethod
+    def load(cls, path, device=None):
+        ck = torch.load(path, map_location="cpu")
+        ag = cls(seed=ck["seed"], device=device, **ck["cfg"])
+        ag.net.load_state_dict(ck["net"])
+        ag.opt.load_state_dict(ck["opt"])
+        ag.phase, ag.steps, ag.vko_ready = ck["phase"], ck["steps"], ck["vko_ready"]
+        ag.fallback_rate = ck["fallback_rate"]
+        if ag.vko_ready:
+            ag.net.value_ko.requires_grad_(False)
+        return ag  # unfinished BC data is not saved: a BC-phase checkpoint resumes with an empty buffer
