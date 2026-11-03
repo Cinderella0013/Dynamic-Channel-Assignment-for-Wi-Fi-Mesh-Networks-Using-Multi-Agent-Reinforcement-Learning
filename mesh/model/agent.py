@@ -154,6 +154,23 @@ class EGATAgent:
             adv[t] = running
         return adv, adv + values
 
+    def nstep_adv(self, rewards, values, dones, last_value, n_steps):
+        """Semi-MDP credit: A_t = sum_{k<m} g^k r_{t+k} + g^m V_{t+m} - V_t, m <= n_steps, cut at done."""
+        g, T = self.cfg.gamma, len(rewards)
+        adv = np.zeros_like(values, dtype=np.float64)
+        for t in range(T):
+            ret, k, ended = np.zeros(values.shape[1]), 0, False
+            while k < n_steps and t + k < T:
+                ret += g ** k * rewards[t + k]
+                k += 1
+                if dones[t + k - 1]:
+                    ended = True
+                    break
+            if not ended:
+                ret += g ** k * (values[t + k] if t + k < T else last_value)
+            adv[t] = ret - values[t]
+        return adv
+
     def _last_value(self, last_obs):
         p = self.prepare(last_obs)
         self.net.eval()
@@ -181,6 +198,10 @@ class EGATAgent:
         last_v = np.zeros(values.shape[1]) if dones[-1] else self._last_value(last_obs)
         adv, ret = self.gae(rewards, values, dones, last_v)
         adv = (adv - adv[alive].mean()) / (adv[alive].std() + 1e-8)
+        adv_ch = adv
+        if cfg.semi_mdp:  # channel decisions are credited with the reward over the next t_c steps
+            adv_ch = self.nstep_adv(rewards, values, dones, last_v, cfg.t_c)
+            adv_ch = (adv_ch - adv_ch[alive].mean()) / (adv_ch[alive].std() + 1e-8)
 
         dev = self.device
         T = len(buf)
@@ -203,8 +224,17 @@ class EGATAgent:
                 r_t = torch.as_tensor(ret[idx], device=dev, dtype=torch.float32)
                 m = torch.as_tensor(alive[idx], device=dev, dtype=torch.float32)
                 logp, ent = self._logp_entropy(out, j, c, is_chan)
-                ratio = torch.exp(logp - old)
-                pg = -torch.min(ratio * a_t, ratio.clamp(1 - cfg.clip, 1 + cfg.clip) * a_t)
+                if cfg.semi_mdp:  # separate clipped surrogates: route on GAE, channel on n-step advantage
+                    lr_new = torch.log_softmax(out["route_logits"], -1).gather(-1, j[..., None])[..., 0]
+                    lc_new = torch.log_softmax(out["chan_logits"], -1).gather(-1, c[..., None])[..., 0]
+                    lr_old = torch.as_tensor(np.stack([buf[i]["logp_route"] for i in idx]), device=dev, dtype=torch.float32)
+                    lc_old = torch.as_tensor(np.stack([buf[i]["logp_chan"] for i in idx]), device=dev, dtype=torch.float32)
+                    ac_t = torch.as_tensor(adv_ch[idx], device=dev, dtype=torch.float32)
+                    rr, rc = torch.exp(lr_new - lr_old), torch.exp(lc_new - lc_old)
+                    pg = -torch.min(rr * a_t, rr.clamp(1 - cfg.clip, 1 + cfg.clip) * a_t)                         - is_chan[:, None] * torch.min(rc * ac_t, rc.clamp(1 - cfg.clip, 1 + cfg.clip) * ac_t)
+                else:
+                    ratio = torch.exp(logp - old)
+                    pg = -torch.min(ratio * a_t, ratio.clamp(1 - cfg.clip, 1 + cfg.clip) * a_t)
                 vl = (out["value"] - r_t) ** 2
                 per = pg + cfg.value_coef * vl - cfg.entropy * ent
                 if self.bc_net is not None:  # v1: stay near the BC policy (AlphaStar-style anchor)

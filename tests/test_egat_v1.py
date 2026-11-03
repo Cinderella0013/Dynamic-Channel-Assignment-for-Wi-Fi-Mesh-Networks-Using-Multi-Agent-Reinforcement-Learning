@@ -23,3 +23,15 @@ def test_kl_zero_at_bc_end():
         a, b = ag._tensors([p], h), ag._bc_tensors([p], h)
     assert torch.allclose(a["route_logits"], b["route_logits"]) and torch.allclose(a["chan_logits"], b["chan_logits"])
     assert ag.opt.param_groups[0]["lr"] == 1e-4
+
+
+def test_nstep_adv_cuts_at_done_and_bootstraps():
+    ag = EGATv1Agent(seed=0, use_bc=False, device="cpu")
+    r = np.ones((4, 1))
+    v = np.zeros((4, 1))
+    d = np.array([0., 0., 1., 0.])
+    a = ag.nstep_adv(r, v, d, last_value=np.array([10.0]), n_steps=3)
+    g = ag.cfg.gamma
+    assert np.isclose(a[0, 0], 1 + g + g**2)          # 3 steps, ends at done (t=2) -> no bootstrap
+    assert np.isclose(a[2, 0], 1.0)                   # done at t=2
+    assert np.isclose(a[3, 0], 1 + g * 10.0)          # rollout end -> bootstrap last_value
