@@ -59,3 +59,36 @@ def test_dead_node_excluded():
     dead = ~alive_mask(prev)
     rew = per_agent_reward(prev, act, info, r, RewardWeights())
     assert dead.sum() == 1 and rew[dead].item() == 0.0 and np.isfinite(rew).all()
+
+
+class _KoThroughInterface:
+    """Ko's decisions expressed as RL actions: the interface must not cap a good policy."""
+
+    def __init__(self):
+        from mesh.baselines.ko import KoLocalCost
+        self.ko = KoLocalCost()
+
+    def act(self, obs):
+        k = self.ko.act(obs)
+        slots = neighbor_slots(obs)
+        a = np.zeros(len(slots), int)
+        for u in range(len(slots)):
+            j = np.flatnonzero(slots[u] == k.next_hop[u])
+            a[u] = (k.channels[u, 1] - 1) * K_SLOTS + (j[0] if len(j) else 0)
+        return decode(obs, slots, a)
+
+
+def test_interface_can_express_ko():
+    from mesh.baselines.ko import KoLocalCost
+    from mesh.eval.run import run_episode
+    ko = np.mean([run_episode(MeshEnv(make_scenario("S2"), s), KoLocalCost())["reward"] for s in range(3)])
+    via = np.mean([run_episode(MeshEnv(make_scenario("S2"), s), _KoThroughInterface())["reward"] for s in range(3)])
+    assert via >= 0.95 * ko
+
+
+def test_every_routable_node_has_a_closer_slot():
+    _, obs = _obs("S2", 0)
+    slots, hop = neighbor_slots(obs), obs.node_feat[:, 3]
+    for u in range(20):
+        if u not in obs.gateways and hop[u] < 20:
+            assert any(hop[v] < hop[u] for v in slots[u] if v >= 0)

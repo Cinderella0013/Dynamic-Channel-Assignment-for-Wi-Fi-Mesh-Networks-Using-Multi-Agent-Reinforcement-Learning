@@ -21,13 +21,18 @@ def alive_mask(obs):
 
 
 def neighbor_slots(obs):
-    """Link neighbours by SNR descending (ties: lower id), -1 padded. Static per topology."""
+    """Parent candidates: link neighbours by hop-to-gateway ascending, then SNR descending
+    (ties: lower id), -1 padded. Hop first so every routable node has a slot that makes
+    progress toward a gateway; pure SNR order picks the nearest nodes, which for ~22% of
+    nodes are all no closer to a gateway (Ko through the interface fell from +2714 to -1592).
+    """
     link = edge_matrix(obs, "is_link") > 0
     snr = edge_matrix(obs, "snr_db")
+    hop = obs.node_feat[:, NODE_FEATS.index("hop_to_gw")]
     slots = np.full((len(link), K_SLOTS), -1, dtype=int)
     for u in range(len(link)):
         nbrs = np.flatnonzero(link[u])
-        nbrs = nbrs[np.lexsort((nbrs, -snr[u, nbrs]))][:K_SLOTS]
+        nbrs = nbrs[np.lexsort((nbrs, -snr[u, nbrs], hop[nbrs]))][:K_SLOTS]
         slots[u, : len(nbrs)] = nbrs
     return slots
 
