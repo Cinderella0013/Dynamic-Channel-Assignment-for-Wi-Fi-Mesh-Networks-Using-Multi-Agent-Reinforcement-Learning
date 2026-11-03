@@ -108,3 +108,97 @@ class EGATAgent:
                              value=out["value"][0].cpu().numpy(), is_chan_step=p["is_chan_step"])
         self.last_action_idx = a
         return decode(obs, p["slots"], a)
+
+    # ---------- learning ----------
+    def reward_lam(self, step, total):
+        f = min(step / max(total, 1), 1.0)
+        return self.cfg.lam_start + f * (self.cfg.lam_end - self.cfg.lam_start)
+
+    def learn(self, obs, action_idx, rewards, next_obs, done):
+        self.steps += 1
+        info = {}
+        if self.phase == "bc":
+            self.bc_buf.append(dict(self._pending, rewards=np.asarray(rewards, np.float32), done=float(done)))
+            if len(self.bc_buf) >= self.cfg.bc_steps:
+                info = self.bc_fit()
+                self.phase = "ppo"
+            return info
+        self.buf.append(dict(self._pending, rewards=np.asarray(rewards, np.float32), done=float(done),
+                             alive=self._pending["p"]["alive"]))
+        if len(self.buf) >= self.cfg.rollout:
+            info = self.update(next_obs)
+            self.buf = []
+        return info
+
+    def gae(self, rewards, values, dones, last_value):
+        g, lam = self.cfg.gamma, self.cfg.gae_lambda
+        adv = np.zeros_like(values, dtype=np.float64)
+        running = np.zeros(values.shape[1])
+        for t in reversed(range(len(rewards))):
+            nonterm = 1.0 - dones[t]
+            next_v = last_value if t == len(rewards) - 1 else values[t + 1]
+            delta = rewards[t] + g * next_v * nonterm - values[t]
+            running = delta + g * lam * nonterm * running
+            adv[t] = running
+        return adv, adv + values
+
+    def _last_value(self, last_obs):
+        p = self.prepare(last_obs)
+        self.net.eval()
+        with torch.no_grad():
+            return self._tensors([p], self.h[None])["value"][0].cpu().numpy()
+
+    def _logp_entropy(self, out, j, c, is_chan):
+        lr = torch.log_softmax(out["route_logits"], -1)
+        lc = torch.log_softmax(out["chan_logits"], -1)
+        logp = lr.gather(-1, j[..., None])[..., 0] + is_chan[:, None] * lc.gather(-1, c[..., None])[..., 0]
+        ent = -(lr.exp() * lr).sum(-1) - is_chan[:, None] * (lc.exp() * lc).sum(-1)
+        return logp, ent
+
+    def update(self, last_obs):
+        cfg, buf = self.cfg, self.buf
+        rewards = np.stack([b["rewards"] for b in buf])
+        values = np.stack([b["value"] for b in buf])
+        dones = np.array([b["done"] for b in buf])
+        alive = np.stack([b["alive"] for b in buf])
+        last_v = np.zeros(values.shape[1]) if dones[-1] else self._last_value(last_obs)
+        adv, ret = self.gae(rewards, values, dones, last_v)
+        adv = (adv - adv[alive].mean()) / (adv[alive].std() + 1e-8)
+
+        dev = self.device
+        T = len(buf)
+        stats = dict(policy_loss=0.0, value_loss=0.0, entropy=0.0, approx_kl=0.0)
+        n_mb = 0
+        self.net.train()
+        for _ in range(cfg.epochs):
+            order = np.random.default_rng(self.seed + self.steps + n_mb).permutation(T)
+            for start in range(0, T, cfg.minibatch):
+                idx = order[start:start + cfg.minibatch]
+                items = [buf[i]["p"] for i in idx]
+                h_prev = torch.stack([buf[i]["h_prev"] for i in idx]).to(dev)
+                out = self._tensors(items, h_prev)
+                j = torch.as_tensor(np.stack([buf[i]["j"] for i in idx]), device=dev).long()
+                c = torch.as_tensor(np.stack([buf[i]["c"] for i in idx]), device=dev).long()
+                is_chan = torch.as_tensor([float(buf[i]["is_chan_step"]) for i in idx], device=dev)
+                old = torch.as_tensor(np.stack([buf[i]["logp_route"] + float(buf[i]["is_chan_step"]) * buf[i]["logp_chan"]
+                                                for i in idx]), device=dev, dtype=torch.float32)
+                a_t = torch.as_tensor(adv[idx], device=dev, dtype=torch.float32)
+                r_t = torch.as_tensor(ret[idx], device=dev, dtype=torch.float32)
+                m = torch.as_tensor(alive[idx], device=dev, dtype=torch.float32)
+                logp, ent = self._logp_entropy(out, j, c, is_chan)
+                ratio = torch.exp(logp - old)
+                pg = -torch.min(ratio * a_t, ratio.clamp(1 - cfg.clip, 1 + cfg.clip) * a_t)
+                vl = (out["value"] - r_t) ** 2
+                per = pg + cfg.value_coef * vl - cfg.entropy * ent
+                loss = (per * m).sum() / m.sum().clamp(min=1)
+                self.opt.zero_grad()
+                loss.backward()
+                torch.nn.utils.clip_grad_norm_(self.net.parameters(), cfg.max_grad)
+                self.opt.step()
+                k = m.sum().clamp(min=1)
+                stats["policy_loss"] += ((pg * m).sum() / k).item()
+                stats["value_loss"] += ((vl * m).sum() / k).item()
+                stats["entropy"] += ((ent * m).sum() / k).item()
+                stats["approx_kl"] += (((old - logp) * m).sum() / k).item()
+                n_mb += 1
+        return {key: val / max(n_mb, 1) for key, val in stats.items()}
