@@ -11,7 +11,7 @@ def _obs(name="S2", seed=0):
     return env, env.reset()
 
 
-def test_slots_sorted_by_snr_and_padded():
+def test_slots_shape_and_padded():
     _, obs = _obs()
     s = neighbor_slots(obs)
     assert s.shape == (20, K_SLOTS) and (s[:, 0] >= 0).all()
@@ -92,3 +92,29 @@ def test_every_routable_node_has_a_closer_slot():
     for u in range(20):
         if u not in obs.gateways and hop[u] < 20:
             assert any(hop[v] < hop[u] for v in slots[u] if v >= 0)
+
+
+def test_parent_pays_for_children_following_its_channel():
+    env, obs = _obs("S2", 0)
+    slots = neighbor_slots(obs)
+    m = action_mask(obs, slots)
+    a = np.array([np.flatnonzero(m[i])[0] for i in range(20)])
+    obs1, r, info = env.step(decode(obs, slots, a))
+    act0 = decode(obs1, neighbor_slots(obs1), a)          # same choices: nothing changes
+    p = next(int(v) for v in act0.next_hop if v >= 0)
+    kids = np.flatnonzero(act0.next_hop == p)
+    a2 = a.copy()
+    a2[p] = ((a[p] // K_SLOTS + 1) % 6) * K_SLOTS + a[p] % K_SLOTS   # parent retunes its downlink only
+    act = decode(obs1, neighbor_slots(obs1), a2)
+    _, r2, info2 = env.step(act)
+    zero = dict(info2, local_utility=np.zeros(20))
+    rew = per_agent_reward(obs1, act, zero, 0.0, RewardWeights())
+    assert np.isclose(rew[p], -0.1 * (1 + len(kids)))
+    assert np.allclose(rew[kids], 0.0)
+
+
+def test_gateway_parent_onehot_is_none():
+    _, obs = _obs()
+    o, _ = agent_features(obs, neighbor_slots(obs))
+    for g in obs.gateways:
+        assert o[g, -1] == 1.0 and o[g, -5:-1].sum() == 0

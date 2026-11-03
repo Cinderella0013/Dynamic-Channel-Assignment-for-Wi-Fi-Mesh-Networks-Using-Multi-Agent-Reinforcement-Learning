@@ -35,3 +35,28 @@ def test_learns_constant_best_action():
     ag.act(obs, explore=False)
     nongw = [i for i in range(20) if i not in obs.gateways]
     assert (ag.last_action_idx[nongw] == 5).mean() > 0.8
+
+
+def test_zscore_bounded_on_constant_features():
+    net = GATA2CNet().train()
+    x = torch.zeros(1, 6, 33)
+    adj = torch.eye(6, dtype=torch.bool)[None]
+    mask = torch.ones(1, 6, N_ACTIONS, dtype=torch.bool)
+    for _ in range(3000):
+        net(x, adj, mask)                       # constant input: EMA variance -> 0
+    x2 = x.clone()
+    x2[0, 0, 4] = 1.0                           # rare event (e.g. a node dies)
+    z = (x2 - net.mu) / net.std()
+    assert net.normalize(x2).abs().max() <= 5.0 and torch.isfinite(z).all()
+
+
+def test_learn_updates_input_stats_once():
+    env = MeshEnv(make_scenario("S1"), 0)
+    obs = env.reset()
+    ag = LiAgent(seed=0)
+    ag.act(obs, explore=True)
+    before = ag.net.mu.clone()
+    s, _ = ag._prep(obs)
+    batch_mean = s[0].reshape(-1, s[0].shape[-1]).mean(0)
+    ag.learn(obs, ag.last_action_idx, np.zeros(20), obs, done=False)
+    assert torch.allclose(ag.net.mu, 0.99 * before + 0.01 * batch_mean, atol=1e-5)

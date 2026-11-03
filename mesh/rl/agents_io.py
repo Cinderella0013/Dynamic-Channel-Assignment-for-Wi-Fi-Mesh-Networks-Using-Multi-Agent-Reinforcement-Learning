@@ -74,7 +74,7 @@ def agent_features(obs, slots):
     base = nf[:, cols].astype(np.float64)
     base[:, 3] /= n
     ch = np.eye(N_CHANNELS)[obs.channels[:, 1]]
-    match = slots == obs.next_hop[:, None]
+    match = (slots == obs.next_hop[:, None]) & (slots >= 0)  # -1 padding is not a parent
     cur = np.where(match.any(axis=1), match.argmax(axis=1), K_SLOTS)
     par = np.eye(K_SLOTS + 1)[cur]
     o = np.concatenate([base, ch, par], axis=1)
@@ -92,7 +92,14 @@ def agent_features(obs, slots):
 
 def per_agent_reward(prev_obs, action, info, reward_global, w):
     alive = alive_mask(prev_obs)
-    sw = (action.channels != prev_obs.channels).sum(axis=1)
+    # radio 1 is the node's own choice; a radio-0 change caused by the parent retuning
+    # (same parent, parent's downlink changed) is charged to the parent, not the child
+    sw = (action.channels[:, 1] != prev_obs.channels[:, 1]).astype(float)
+    r0 = action.channels[:, 0] != prev_obs.channels[:, 0]
+    same_parent = (action.next_hop == prev_obs.next_hop) & (action.next_hop >= 0)
+    follows = r0 & same_parent & (sw[np.maximum(action.next_hop, 0)] > 0)
+    sw += r0 & ~follows
+    np.add.at(sw, action.next_hop[follows], 1.0)
     rc = (action.next_hop != prev_obs.next_hop).astype(float)
     r = (0.5 * info["local_utility"] + 0.5 * reward_global / max(alive.sum(), 1)
          - w.gamma * sw - w.delta * rc)

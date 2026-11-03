@@ -5,12 +5,12 @@ Appendix material for spec §5.5: every way the RL baselines differ from their s
 ## Common to all learned baselines
 
 - **Agent:** each mesh node is an agent, gateways included. Parameters are shared across agents.
-- **Action:** a downlink channel index (6 choices, channels 1–6 on radio 1) combined with a parent slot (4 choices, the four link neighbours with highest SNR), giving 24 discrete actions. Radio 0 follows the parent's downlink channel. Ko uses the same tree convention, so every parent link has a channel both ends share. The papers act on channel × transmit power and have no routing. Power control is outside this project's scope (spec §1.4).
+- **Action:** a downlink channel index (6 choices, channels 1–6 on radio 1) combined with a parent slot (4 choices: link neighbours ranked by hop count to a gateway, then by SNR), giving 24 discrete actions. Ranking by SNR alone left 22% of nodes with no slot closer to a gateway (Ko expressed through the interface fell from +2714 to −1592 on S2); hop-first ranking restores 2682. Radio 0 follows the parent's downlink channel. Ko uses the same tree convention, so every parent link has a channel both ends share. The papers act on channel × transmit power and have no routing. Power control is outside this project's scope (spec §1.4).
 - **Observation:**
   - `o_i` is shared with neighbours: offered load, unmet demand, is_gateway, hop/n, alive, radio-1 channel, current parent slot.
   - `m_i` stays local: per slot, whether it is valid, its SNR, rate and load fraction.
   - **No edge features enter attention.** Edge-aware attention is EGAT-MAPPO's contribution (spec §1.3).
-- **Reward:** `r_i = 0.5·local_utility_i + 0.5·reward_global/n_alive − 0.1·switches_i − 0.05·route_change_i`. Both terms use the env's proportional-fair log utility. The papers use different rewards: Yuan uses interference-temperature × efficiency, and Li uses a V2N/V2V rate mix. One shared reward keeps the comparison fair.
+- **Reward:** `r_i = 0.5·local_utility_i + 0.5·reward_global/n_alive − 0.1·switches_i − 0.05·route_change_i`. `switches_i` counts the node's own radio-1 change; a child's radio-0 change caused by its parent retuning is charged to the parent. Both terms use the env's proportional-fair log utility. The papers use different rewards: Yuan uses interference-temperature × efficiency, and Li uses a V2N/V2V rate mix. One shared reward keeps the comparison fair.
 - **Budget:** each learner gets the same number of env steps. Every episode draws a scenario uniformly from S1–S6 with a fresh topology seed, n = 20.
 - **Discount:** γ = 0.98 for all learners.
 - **Gradient clipping:** gradient norm is clipped at 10 for both neural baselines. Neither paper mentions it. It keeps early Q-values and advantages from blowing up under log-utility rewards.
@@ -49,7 +49,7 @@ Appendix material for spec §5.5: every way the RL baselines differ from their s
 **Changed:**
 - **Q head:** an MLP (128-128) instead of the paper's CNN. The CNN's shape is not given, and the input is a flat vector.
 - **Not specified in the paper:** 4 attention heads, hidden size 64, replay buffer of 10 000 graph transitions, ε floor 0.05 over 50 000 steps.
-- **Neighbours:** the 3 highest-SNR link neighbours, not a distance rule.
+- **Neighbours:** the first 3 parent slots (link neighbours ranked hop-first, then SNR), i.e. the most gateway-ward neighbours, not the nearest ones.
 - **Actions:** no power action.
 
 ## Li et al. 2025: GAT-A2C (Sensors 25(16):5209)
@@ -67,7 +67,7 @@ This is the assumed source for "Li". The user has not yet confirmed it.
 - **Critic outputs V(s).** The paper uses Q in Eq. 24 and V in the text.
 - **Standard 1-step on-policy A2C** (`A = r + γV(s') − V(s)`) instead of the paper's replay-based variant, whose target mixes target networks and argmax-π and is not fully specified.
 - **No auxiliary GAT MSE loss.** Eq. 16–17 compare a scalar label with a vector embedding, so the loss is ill-defined.
-- **z-score statistics** use a running EMA with momentum 0.01, updated only during learning. The paper's fixed training-set statistics do not exist for an online learner.
+- **z-score statistics** use a running EMA with momentum 0.01, updated only during learning (once per update; the bootstrap pass runs in eval mode). The standard deviation is floored at 0.1 and z is clipped to ±5, so features that stay constant for a long time do not explode on rare events (S4/S6). The paper's fixed training-set statistics do not exist for an online learner.
 - **γ = 0.98.** The paper's value is ambiguous: it lists λ = 0.5 under "discount factor".
 - **Not specified in the paper:** entropy 0.01, value coefficient 0.5, Adam optimizer, GAT hidden size 8 per head.
 - **Actions:** no power action.

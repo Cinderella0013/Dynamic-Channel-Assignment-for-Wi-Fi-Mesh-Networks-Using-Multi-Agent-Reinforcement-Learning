@@ -42,12 +42,18 @@ class GATA2CNet(nn.Module):
         self.critic = nn.Sequential(nn.Linear(f_in + out, 500), nn.ReLU(), nn.Linear(500, 250), nn.ReLU(),
                                     nn.Linear(250, 1))
 
+    def std(self):
+        return torch.sqrt(self.var + 1e-2)  # floor: constant features must not explode on rare events
+
+    def normalize(self, x):
+        return ((x - self.mu) / self.std()).clamp(-5.0, 5.0)
+
     def forward(self, x, adj, mask):
         if self.training:  # Li Eq. 10: z-score with training statistics (running estimate)
             flat = x.reshape(-1, x.shape[-1])
             self.mu.mul_(0.99).add_(0.01 * flat.mean(0).detach())
             self.var.mul_(0.99).add_(0.01 * flat.var(0, unbiased=False).detach())
-        x = (x - self.mu) / (self.var.sqrt() + 1e-6)
+        x = self.normalize(x)
         b, n, _ = x.shape
         z = nn.functional.elu(self.gat1(self.in_drop(x), adj).reshape(b, n, -1))
         z = self.gat2(z, adj).reshape(b, n, -1)
@@ -97,10 +103,11 @@ class LiAgent:
     def learn(self, obs, action_idx, rewards, next_obs, done):
         s, _ = self._prep(obs)
         nxt, _ = self._prep(next_obs)
-        self.net.train()
-        logits, v = self.net(*s)
+        self.net.eval()  # bootstrap without dropout noise and without a second stats update
         with torch.no_grad():
             v_next = self.net(*nxt)[1]
+        self.net.train()
+        logits, v = self.net(*s)
         r = torch.as_tensor(np.asarray(rewards, dtype=np.float32)[None], device=self.device)
         adv = r + self.hp["gamma"] * (1.0 - float(done)) * v_next - v
         logp = torch.log_softmax(logits, -1)
