@@ -68,7 +68,8 @@ def train(method, steps, seed=0, n=20, out=None, log_every=5000, val_every=None,
             env = MeshEnv(make_scenario(str(rng.choice(SCENARIOS)), n=n), int(rng.integers(2**31)))
             obs = env.reset()
             if teacher == "oracle" and agent.phase == "bc":
-                agent.ko = LookaheadOracle(env)  # bound to this episode's env (it reads future traffic)
+                # bound to this episode's env (it reads future traffic); scores moves under the learner's queue rule
+                agent.ko = LookaheadOracle(env, queue_preserve=bool(getattr(agent.cfg, "queue_preserve", False)))
         action = agent.act(obs, explore=True)
         a_idx = agent.last_action_idx
         next_obs, r, info = env.step(action)

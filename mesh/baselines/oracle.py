@@ -15,12 +15,14 @@ from mesh.rl.agents_io import N_DL_CH, _valid_slots, neighbor_slots
 from mesh.sim.env import Action
 
 
-def rollout(env, action, horizon):
-    """Summed env reward of holding `action` for `horizon` steps on a copy of `env`."""
+def rollout(env, action, horizon, queue_preserve=False):
+    """Summed env reward of holding `action` for `horizon` steps on a copy of `env`.
+    queue_preserve: score switches under the learner's queue rule (v2 keeps queues across switches)."""
     e = copy.deepcopy(env)
+    qp = action.queue_preserve or queue_preserve
     tot = 0.0
     for _ in range(horizon):
-        _, r, info = e.step(Action(action.channels.copy(), action.next_hop.copy(), action.queue_preserve))
+        _, r, info = e.step(Action(action.channels.copy(), action.next_hop.copy(), qp))
         tot += r
         if info["done"]:
             break
@@ -41,8 +43,8 @@ def _with_parent(a, u, p):
 
 
 class LookaheadOracle:
-    def __init__(self, env, horizon=10, t_c=10):
-        self.env, self.horizon = env, horizon
+    def __init__(self, env, horizon=10, t_c=10, queue_preserve=False):
+        self.env, self.horizon, self.queue_preserve = env, horizon, queue_preserve
         self.ko, self.last = KoLocalCost(t_c=t_c), None
 
     def act(self, obs):
@@ -51,7 +53,7 @@ class LookaheadOracle:
             if (ko.next_hop != obs.next_hop).any():  # Ko's broken-parent reaction
                 self.last = ko
             return self.last
-        best, best_v = ko, rollout(self.env, ko, self.horizon)
+        best, best_v = ko, rollout(self.env, ko, self.horizon, self.queue_preserve)
         slots = neighbor_slots(obs)
         valid = _valid_slots(obs, slots)
         for u in range(len(slots)):
@@ -61,7 +63,7 @@ class LookaheadOracle:
             cands += [_with_parent(best, u, int(slots[u, j])) for j in np.flatnonzero(valid[u])
                       if slots[u, j] != best.next_hop[u]]
             for a in cands:
-                v = rollout(self.env, a, self.horizon)
+                v = rollout(self.env, a, self.horizon, self.queue_preserve)
                 if v > best_v:
                     best, best_v = a, v
         self.last = best

@@ -60,3 +60,16 @@ def test_validation_during_bc_never_sees_the_oracle(monkeypatch):
     monkeypatch.setattr(T, "VAL_SEEDS", (1000,))
     train("egat_v1", steps=420, teacher="oracle", bc_steps=400, bc_epochs=1, val_every=200)
     assert kinds and set(kinds) == {"KoLocalCost"}
+
+
+def test_oracle_scores_moves_under_the_learners_queue_rule(monkeypatch):
+    got = []
+
+    class Spy(LookaheadOracle):
+        def __init__(self, env, **k):
+            super().__init__(env, **k)
+            got.append(self.queue_preserve)
+    monkeypatch.setattr(T, "LookaheadOracle", Spy)
+    train("egat_v2", steps=60, teacher="oracle", bc_steps=40, bc_epochs=1)  # v2 keeps queues across switches
+    train("egat_v1", steps=60, teacher="oracle", bc_steps=40, bc_epochs=1)
+    assert got[0] is True and got[-1] is False

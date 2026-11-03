@@ -115,6 +115,8 @@ The oracle is privileged and is used only during training:
 - It puts `KoLocalCost` back at every episode end and once BC finishes.
 - So validation, the RL phase and evaluation never see the oracle.
 
+The oracle scores moves under the learner's queue rule: v2 keeps queues across switches (`queue_preserve`), so its oracle rolls candidates out with queues kept; v1's rolls them out without.
+
 The RL phase, the reward and checkpoint selection are unchanged.
 
 Cost: about 0.45 s per step during BC, which adds about 75 min to a 10k-step BC phase.
@@ -122,4 +124,4 @@ Cost: about 0.45 s per step during BC, which adds about 75 min to a 10k-step BC 
 Naming and headroom:
 - Checkpoints are `egat_v{1,2}_oracle_s<k>.pt`.
 - Evaluate them with `--method egat_v1_oracle=<ckpt>`. The suite maps a label to the longest learner name that prefixes it.
-- Headroom reference: on A+B (3 seeds) the oracle itself scores +0.287 composite over Ko (`runs/oracle/oracle_h10_reward.json`).
+- Headroom reference: on A+B (3 seeds) the oracle itself scores +0.287 composite over Ko (`runs/oracle/oracle_h10_reward.json`). That figure was measured without queue preservation, so it describes v1's teacher, not v2's.
