@@ -15,7 +15,7 @@ def test_act_sets_queue_preserve_and_respects_cap():
     env, obs = _env()
     ag = EGATv2Agent(seed=0, use_bc=False, device="cpu")
     for _ in range(5):
-        a = ag.act(obs, explore=True)
+        a = ag.act(obs, explore=False)   # the k_max cap applies at execution; training exploration bypasses it
         assert a.queue_preserve
         before = obs
         obs, _, info = env.step(a)
