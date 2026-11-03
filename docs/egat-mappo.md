@@ -50,3 +50,43 @@ EGAT-MAPPO uses the same per-agent reward as the baselines (`mesh/rl/agents_io.p
 - **No `V_Ko` value check in the fallback.** The spec's rule `V_π < V_Ko − m` was removed after review. `V_Ko` was fitted with λ≈0.5 while `V_π` ends training at λ≈0.1, and the shared encoder kept training after `V_Ko` was frozen. The check therefore fired on about 7.6% of nodes and lowered S2 reward by about 2.7%. It also needs the centralized critic at execution.
 - **No semi-MDP credit for the channel head.** The spec asks for reward accumulated over `t_c`; the implementation uses the per-step GAE advantage at the decision step.
 - **BC agreement counts the route slot only.** Matching Ko's exact channel label is not a meaningful imitation target, for the same reason. BC skips the route target wherever Ko picks a parent the progress mask forbids (one with the same hop count).
+
+## EGAT v1 (`--method egat_v1`)
+
+Same network and components as above. Changes, from spec addendum §3:
+
+- **KL anchor.** After BC the policy is frozen as `π_BC`. PPO adds `κ·KL(π_θ ‖ π_BC)`, with κ annealed from 0.1 to 0.01 over the training budget. The channel-head term counts on decision steps only.
+- **Fixed λ = 0.1.** This keeps the training reward close to the global env reward used for evaluation.
+- **Semi-MDP channel credit.** The channel head uses an n-step advantage with n = `t_c`, cut at episode end. The route head keeps GAE, and the two heads have separately clipped PPO surrogates.
+- **Learning rate 1e-4 after BC.**
+- **Checkpoint selection on validation.** This applies to every learner (§ below).
+
+Reason: with Plan 4 code, PPO lowered the BC policy's reward. S2: BC 2769, PPO 100k 2708, PPO 300k 2623.
+
+## EGAT v2 (`--method egat_v2`): the user's design
+
+Each step runs this pipeline:
+
+```
+input (obs + ACK + backlog)
+  → GAT scores Q_ch(u,c), Q_rt(u,j)
+  → RAES ordered channel reservation
+  → migration refinement
+  → execute with queue preservation
+  → ACK feeds the next step
+```
+
+- **Training.** Double DQN on the executed action, with additive joint Q = Q_ch + Q_rt. Replay buffer 50k, batch 32, τ = 0.01, ε from 0.3 to 0.02 over 50k steps. The warm start is DQfD on Ko demonstrations: the first 10k steps act as Ko and count toward the budget.
+- **RAES.** Nodes take turns in decreasing-backlog order. Each one reserves the channel with the highest `z(Q) − a·z(interference from reserved neighbours) − b·z(co-channel load) − g·z(move cost)`. The parent is chosen by `z(Q_rt) − g·z(move cost)` under the progress mask.
+- **Migration refinement.** A proposed move is kept only if all of these hold:
+  - its gain beats `margin` = 0.1;
+  - at most `ceil(0.1·n)` nodes move per step;
+  - no two conflicting nodes move in the same step;
+  - the node is not in its 3-step cooldown.
+- **Queue preservation.** Moves are executed with `queue_preserve=True`, i.e. CSA-style buffering.
+- **Flags:** `raes`, `migration_control`, `queue_preserve`, `raes_order`, plus all encoder flags.
+- **Fairness setting (b).** Every method runs with `queue_preserve`. This separates the gain from planning and migration control from the gain from queue preservation alone.
+
+## Checkpoint selection (all learners)
+
+`--val-every 10000` evaluates the current policy greedily on S1–S6 with validation seeds 1000–1002, which are never used for testing. The checkpoint kept is the one with the best mean validation reward. Candidates are every validation point, the end of BC and the final policy. Validation runs only between training episodes, and its env steps do not count toward the training budget.

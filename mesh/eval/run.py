@@ -32,7 +32,7 @@ def run_episode(env, policy):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--scenario", required=True)
-    ap.add_argument("--policy", required=True, choices=list(POLICIES) + ["q_neutral", "yuan", "li", "egat"])
+    ap.add_argument("--policy", required=True, choices=list(POLICIES) + ["q_neutral", "yuan", "li", "egat", "egat_v1", "egat_v2"])
     ap.add_argument("--checkpoint", help="trained model for q_neutral / yuan / li / egat")
     ap.add_argument("--seeds", type=int, default=5)
     ap.add_argument("--n", type=int, default=20)
