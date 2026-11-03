@@ -8,7 +8,7 @@ from mesh.rl.agents_io import N_ACTIONS
 
 def test_shapes_and_mask():
     net = GATA2CNet().eval()
-    x = torch.randn(1, 6, 33)
+    x = torch.randn(1, 6, 38)
     adj = torch.eye(6, dtype=torch.bool)[None]
     mask = torch.ones(1, 6, N_ACTIONS, dtype=torch.bool)
     mask[..., 0] = False
@@ -39,7 +39,7 @@ def test_learns_constant_best_action():
 
 def test_zscore_bounded_on_constant_features():
     net = GATA2CNet().train()
-    x = torch.zeros(1, 6, 33)
+    x = torch.zeros(1, 6, 38)
     adj = torch.eye(6, dtype=torch.bool)[None]
     mask = torch.ones(1, 6, N_ACTIONS, dtype=torch.bool)
     for _ in range(3000):

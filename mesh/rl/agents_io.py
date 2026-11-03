@@ -12,8 +12,8 @@ from mesh.sim.radio import N_CHANNELS
 K_SLOTS = 4
 N_DL_CH = 6
 N_ACTIONS = N_DL_CH * K_SLOTS
-F_O = 5 + N_CHANNELS + K_SLOTS + 1
-F_M = 4 * K_SLOTS
+F_O = 6 + N_CHANNELS + K_SLOTS + 1
+F_M = 5 * K_SLOTS
 
 
 def alive_mask(obs):
@@ -70,7 +70,7 @@ def agent_features(obs, slots):
     nf = obs.node_feat
     n = len(nf)
     alive = alive_mask(obs)
-    cols = [NODE_FEATS.index(k) for k in ("offered_load", "unmet", "is_gateway", "hop_to_gw", "alive")]
+    cols = [NODE_FEATS.index(k) for k in ("offered_load", "unmet", "is_gateway", "hop_to_gw", "alive", "backlog")]
     base = nf[:, cols].astype(np.float64)
     base[:, 3] /= n
     ch = np.eye(N_CHANNELS)[obs.channels[:, 1]]
@@ -85,7 +85,8 @@ def agent_features(obs, slots):
     per_slot = [valid.astype(float),
                 edge_matrix(obs, "snr_db")[u, v] / 40,
                 edge_matrix(obs, "rate_mbps")[u, v] / 143.4,
-                edge_matrix(obs, "load_frac")[u, v]]
+                edge_matrix(obs, "load_frac")[u, v],
+                edge_matrix(obs, "ack_ratio")[u, v]]
     m = np.stack(per_slot, axis=2) * valid[:, :, None]
     return o, m.reshape(n, F_M)
 

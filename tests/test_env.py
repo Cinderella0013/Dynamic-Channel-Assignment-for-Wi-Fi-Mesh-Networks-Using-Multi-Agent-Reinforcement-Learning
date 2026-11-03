@@ -25,7 +25,7 @@ def test_episode_runs_and_is_deterministic():
 def test_observation_shapes():
     env = MeshEnv(make_scenario("S1"), 0)
     obs = env.reset()
-    assert obs.node_feat.shape == (20, 5) and obs.edge_attr.shape[1] == 6
+    assert obs.node_feat.shape == (20, 6) and obs.edge_attr.shape[1] == 7
     assert obs.edge_index.shape[0] == 2 and obs.edge_index.shape[1] == obs.edge_attr.shape[0]
 
 

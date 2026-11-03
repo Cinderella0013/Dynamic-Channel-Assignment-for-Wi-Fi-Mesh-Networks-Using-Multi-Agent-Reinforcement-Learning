@@ -7,8 +7,8 @@ from mesh.rl.agents_io import N_ACTIONS
 
 
 def _batch(n=5):
-    o = torch.randn(2, n, 17)
-    m = torch.randn(2, n, 16)
+    o = torch.randn(2, n, 18)
+    m = torch.randn(2, n, 20)
     nbr = torch.arange(n).view(1, n, 1).repeat(2, 1, 4)
     nbr[..., 1] = (nbr[..., 0] + 1) % n
     valid = torch.ones(2, n, 4, dtype=torch.bool)

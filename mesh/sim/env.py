@@ -10,8 +10,8 @@ from mesh.sim.radio import N_CHANNELS, snr_db
 from mesh.sim.topology import generate_topology
 from mesh.sim.traffic import Traffic
 
-NODE_FEATS = ("offered_load", "unmet", "is_gateway", "hop_to_gw", "alive")
-EDGE_FEATS = ("is_link", "is_conflict", "snr_db", "rate_mbps", "load_frac", "same_channel")
+NODE_FEATS = ("offered_load", "unmet", "is_gateway", "hop_to_gw", "alive", "backlog")
+EDGE_FEATS = ("is_link", "is_conflict", "snr_db", "rate_mbps", "load_frac", "same_channel", "ack_ratio")
 
 
 @dataclass
@@ -84,6 +84,7 @@ class MeshEnv:
         self.thr = np.zeros(cfg.n)
         self.load = np.zeros((cfg.n, cfg.n))
         self.cap = np.zeros((cfg.n, cfg.n))
+        self.sent = np.zeros((cfg.n, cfg.n))
         return self._observe(None)
 
     def _ext_noise(self, t):
@@ -156,6 +157,11 @@ class MeshEnv:
                     active[u, v] = True
         cap = link_capacity(self.rg, cc, rate_now, active)
         thr, load = allocate(paths, offered, cap)
+        sent = np.zeros_like(load)
+        for s in np.flatnonzero(flows):
+            if paths[s] is not None:
+                for u, v in zip(paths[s], paths[s][1:]):
+                    sent[u, v] += thr[s]
 
         # an unprepared switch drops the queue that was waiting on an interrupted hop
         queue_loss = np.zeros(cfg.n)
@@ -189,6 +195,7 @@ class MeshEnv:
         self.channels, self.next_hop = channels, next_hop
         self.demand, self.offered, self.thr, self.load, self.cap = demand, offered, thr, load, cap
         self.backlog = new_backlog
+        self.sent = sent
         self.t += 1
         info = dict(throughput=thr, aggregate=float(thr[flows].sum()), jain=jain(thr_w[flows]),
                     p5=p5(thr_w[flows]), utility=u, n_channel_switch=n_sw, n_route_change=n_rc,
@@ -203,14 +210,15 @@ class MeshEnv:
         hops = hops_to_gateway(rg.link, self.gw, self.alive)
         hops = np.where(hops < 0, self.cfg.n, hops)  # unreachable = n, never closer than a gateway
         node_feat = np.stack([self.demand, self.offered - self.thr, self.is_gw,
-                              hops, self.alive], axis=1).astype(np.float32)
+                              hops, self.alive, self.backlog], axis=1).astype(np.float32)
         cc = self._cc(self.channels)
         rate = link_rate(rg, cc, noise)
         load_frac = np.divide(self.load, self.cap, out=np.zeros_like(self.load), where=self.cap > 0)
+        ack = np.divide(self.sent, self.load, out=np.ones_like(self.load), where=self.load > 0)  # ACK: delivered / offered
         us, vs = np.nonzero(rg.link | rg.conflict)
         snr = snr_db(rg.rx_dbm)
         edge_attr = np.stack([rg.link[us, vs], rg.conflict[us, vs], snr[us, vs], rate[us, vs],
-                              load_frac[us, vs], cc[us, vs] >= 0], axis=1).astype(np.float32)
+                              load_frac[us, vs], cc[us, vs] >= 0, ack[us, vs]], axis=1).astype(np.float32)
         return Observation(node_feat=node_feat, channels=self.channels.copy(),
                            next_hop=self.next_hop.copy(),
                            edge_index=np.stack([us, vs]).astype(np.int64),

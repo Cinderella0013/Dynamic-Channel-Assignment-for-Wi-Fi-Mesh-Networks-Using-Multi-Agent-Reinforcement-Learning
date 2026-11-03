@@ -90,3 +90,18 @@ def test_one_step_outage_is_not_starvation():
     a.channels[:, 0] = np.where(obs.next_hop >= 0, 3, 0)
     _, _, during = env.step(a)                           # every flow interrupted for this step
     assert during["utility"] > before["utility"] - 0.2 * abs(before["utility"]) - 5
+
+
+def test_features_include_backlog_and_ack():
+    from mesh.sim.env import NODE_FEATS, EDGE_FEATS
+    from mesh.rl.agents_io import agent_features, neighbor_slots, F_O, F_M
+    env = MeshEnv(make_scenario("S2"), 0)
+    obs = env.reset()
+    for _ in range(3):
+        obs, _, _ = env.step(_hold(obs))
+    assert NODE_FEATS[-1] == "backlog" and EDGE_FEATS[-1] == "ack_ratio"
+    assert np.allclose(obs.node_feat[:, -1], env.backlog)
+    ack = obs.edge_attr[:, -1]
+    assert ((ack >= 0) & (ack <= 1)).all() and (ack < 1).any()
+    o, m = agent_features(obs, neighbor_slots(obs))
+    assert (F_O, F_M) == (18, 20) and o.shape == (20, 18) and m.shape == (20, 20)

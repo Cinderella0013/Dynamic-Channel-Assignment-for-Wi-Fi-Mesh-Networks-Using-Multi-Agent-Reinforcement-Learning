@@ -47,7 +47,7 @@ def test_mask_isolated_node():
 def test_features_shapes():
     _, obs = _obs()
     o, m = agent_features(obs, neighbor_slots(obs))
-    assert o.shape == (20, 17) and m.shape == (20, 16) and np.isfinite(o).all() and np.isfinite(m).all()
+    assert o.shape == (20, 18) and m.shape == (20, 20) and np.isfinite(o).all() and np.isfinite(m).all()
 
 
 def test_dead_node_excluded():

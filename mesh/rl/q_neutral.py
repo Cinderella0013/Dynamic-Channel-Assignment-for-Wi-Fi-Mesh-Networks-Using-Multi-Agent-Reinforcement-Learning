@@ -10,8 +10,8 @@ from mesh.rl.agents_io import (K_SLOTS, N_ACTIONS, action_mask, agent_features, 
 def discretize(o, m):
     load_bin = int(np.digitize(o[0], [1.0, 5.0]))
     hop_bin = int(np.digitize(o[3], [1e-9, 0.1, 0.2]))  # gateway, near, mid, far (hop / n)
-    radio1 = int(np.argmax(o[5:12]))
-    slot = m.reshape(K_SLOTS, 4)
+    radio1 = int(np.argmax(o[6:13]))  # after the 6 base node features
+    slot = m.reshape(K_SLOTS, -1)
     rate = slot[:, 2] * 143.4 * slot[:, 0]
     best = int(np.argmax(rate)) if slot[:, 0].any() else -1
     rate_bin = int(np.digitize(rate.max(), [30.0, 80.0])) if best >= 0 else -1

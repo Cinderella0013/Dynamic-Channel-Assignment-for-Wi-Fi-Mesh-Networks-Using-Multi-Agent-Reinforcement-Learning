@@ -2,8 +2,8 @@ import torch
 from mesh.model.egat import EGATConfig, EdgeGATv2, EGATNet
 
 
-def _inputs(n=6, B=2, d_edge=6):
-    x = torch.randn(B, n, 33)
+def _inputs(n=6, B=2, d_edge=7):
+    x = torch.randn(B, n, 38)
     e = torch.randn(B, n, n, d_edge)
     adj = torch.eye(n, dtype=torch.bool).repeat(B, 1, 1)
     adj[:, 0, 1] = adj[:, 1, 0] = True
@@ -23,9 +23,9 @@ def test_shapes_and_route_mask():
 
 
 def test_attention_respects_adjacency():
-    layer = EdgeGATv2(8, 6, 2, 4)
+    layer = EdgeGATv2(8, 7, 2, 4)
     h = torch.randn(1, 4, 8)
-    e = torch.randn(1, 4, 4, 6)
+    e = torch.randn(1, 4, 4, 7)
     adj = torch.eye(4, dtype=torch.bool)[None]
     out1 = layer(h, e, adj)
     h2 = h.clone()

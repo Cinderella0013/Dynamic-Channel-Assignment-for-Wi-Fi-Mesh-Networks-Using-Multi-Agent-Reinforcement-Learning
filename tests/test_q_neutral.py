@@ -5,7 +5,7 @@ from mesh.sim.scenarios import make_scenario
 
 
 def test_discretize_is_hashable_and_small():
-    k = discretize(np.zeros(17), np.zeros(16))
+    k = discretize(np.zeros(18), np.zeros(20))
     assert hash(k) is not None and len(k) == 7
 
 
