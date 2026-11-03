@@ -53,7 +53,9 @@ class MeshEnv:
         self.seed = seed
         self.w = weights
 
-    def reset(self):
+    def reset(self, seed=None):
+        if seed is not None:
+            self.seed = seed
         cfg = self.cfg
         top_ss, traffic_ss, _ = np.random.SeedSequence(self.seed).spawn(3)
         self.top = generate_topology(cfg.kind, cfg.n, cfg.n_gateways, np.random.default_rng(top_ss))
@@ -76,7 +78,7 @@ class MeshEnv:
         self.thr = np.zeros(cfg.n)
         self.load = np.zeros((cfg.n, cfg.n))
         self.cap = np.zeros((cfg.n, cfg.n))
-        return self._observe(self._ext_noise(0))
+        return self._observe(None)
 
     def _ext_noise(self, t):
         ei = self.cfg.ext_interf
@@ -102,9 +104,12 @@ class MeshEnv:
             raise ValueError("action arrays must be integer")
         if ch.min() < 0 or ch.max() >= N_CHANNELS:
             raise ValueError(f"channel index outside [0, {N_CHANNELS})")
-        return ch.copy(), nh.copy()
+        nh = np.where((nh >= 0) & (nh < n), nh, -1)
+        return ch.copy(), nh
 
     def step(self, action):
+        if self.t >= self.cfg.episode_len:
+            raise RuntimeError("episode finished; call reset()")
         channels, next_hop = self._validate(action)
         cfg, t = self.cfg, self.t
         if cfg.failure_step == t:
@@ -143,11 +148,13 @@ class MeshEnv:
         info = dict(throughput=thr, aggregate=float(thr[flows].sum()), jain=jain(thr[flows]),
                     p5=p5(thr[flows]), utility=u, n_channel_switch=n_sw, n_route_change=n_rc,
                     n_drop=n_drop, local_utility=local_u, done=self.t == cfg.episode_len)
-        return self._observe(self._ext_noise(self.t)), float(reward), info
+        # observation reflects the step just executed (no lookahead on the interferer)
+        return self._observe(noise), float(reward), info
 
     def _observe(self, noise):
         rg = self.rg
         hops = hops_to_gateway(rg.link, self.gw, self.alive)
+        hops = np.where(hops < 0, self.cfg.n, hops)  # unreachable = n, never closer than a gateway
         node_feat = np.stack([self.demand, self.demand - self.thr, self.is_gw,
                               hops, self.alive], axis=1).astype(np.float32)
         cc = self._cc(self.channels)
