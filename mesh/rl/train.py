@@ -5,6 +5,8 @@ import time
 
 import numpy as np
 
+from mesh.baselines.ko import KoLocalCost
+from mesh.baselines.oracle import LookaheadOracle
 from mesh.model.agent import EGATAgent, EGATv1Agent
 from mesh.model.v2 import EGATv2Agent
 from mesh.rl.agents_io import per_agent_reward
@@ -41,9 +43,12 @@ def validate(agent, n):
                           for s in SCENARIOS for vs in VAL_SEEDS]))
 
 
-def train(method, steps, seed=0, n=20, out=None, log_every=5000, val_every=None, **agent_kwargs):
+def train(method, steps, seed=0, n=20, out=None, log_every=5000, val_every=None, teacher="ko", **agent_kwargs):
+    """teacher="oracle": the BC phase imitates LookaheadOracle (privileged, training only) instead of Ko."""
     rng = np.random.default_rng(seed)
     agent = LEARNERS[method](seed=seed, **agent_kwargs)
+    if teacher == "oracle" and not (hasattr(agent, "phase") and hasattr(agent, "ko")):
+        raise ValueError(f"{method} has no behaviour-cloning phase to take an oracle teacher")
     lam_of = getattr(agent, "reward_lam", None)
     if hasattr(agent, "set_budget"):
         agent.set_budget(steps)
@@ -62,11 +67,16 @@ def train(method, steps, seed=0, n=20, out=None, log_every=5000, val_every=None,
         if obs is None:
             env = MeshEnv(make_scenario(str(rng.choice(SCENARIOS)), n=n), int(rng.integers(2**31)))
             obs = env.reset()
+            if teacher == "oracle" and agent.phase == "bc":
+                agent.ko = LookaheadOracle(env)  # bound to this episode's env (it reads future traffic)
         action = agent.act(obs, explore=True)
         a_idx = agent.last_action_idx
         next_obs, r, info = env.step(action)
         lam = lam_of(step, steps) if lam_of else 0.5
         agent.learn(obs, a_idx, per_agent_reward(obs, action, info, r, env.w, lam=lam), next_obs, info["done"])
+        if teacher == "oracle" and (agent.phase != "bc" or info["done"]) and not isinstance(agent.ko, KoLocalCost):
+            # after BC, and between episodes (validation), the prior/fallback must be Ko: the oracle cannot run at test time
+            agent.ko = KoLocalCost()
         ep_r += r
         obs = next_obs
         if val_every:
@@ -102,8 +112,9 @@ def main():
     ap.add_argument("--out")
     ap.add_argument("--log-every", type=int, default=5000)
     ap.add_argument("--val-every", type=int, default=None)
+    ap.add_argument("--teacher", choices=("ko", "oracle"), default="ko")
     a = ap.parse_args()
-    train(a.method, a.steps, a.seed, a.n, a.out, a.log_every, a.val_every)
+    train(a.method, a.steps, a.seed, a.n, a.out, a.log_every, a.val_every, teacher=a.teacher)
 
 
 if __name__ == "__main__":
