@@ -1,6 +1,7 @@
 """Ko local-cost adaptation (this project's reading; see spec section 1.2).
 
-Acts every t_c steps, holds its last action in between.
+Acts every t_c steps and holds its last action in between, unless a parent link
+breaks (parent dead or no usable rate), which triggers an immediate re-decision.
 Routing: Bellman-Ford toward gateways on the physical link graph, link cost
 (1 + load_frac) / snr_rate (rate the SNR allows on any channel). Hysteresis:
 a node switches parent only if the new cost is < SWITCH_GAIN x current cost.
@@ -22,11 +23,19 @@ class KoLocalCost:
         self.t_c = t_c
 
     def act(self, obs):
-        if obs.t % self.t_c:
-            return Action(obs.channels.copy(), obs.next_hop.copy())
         alive = obs.node_feat[:, NODE_FEATS.index("alive")] > 0
+        if obs.t % self.t_c and not self._parent_broken(obs, alive):
+            return Action(obs.channels.copy(), obs.next_hop.copy())
         next_hop = self._route(obs, alive)
         return Action(self._assign_channels(obs, next_hop, alive), next_hop)
+
+    @staticmethod
+    def _parent_broken(obs, alive):
+        """True if some live node's parent died or its link lost every usable rate."""
+        rate = edge_matrix(obs, "rate_mbps")
+        us = np.flatnonzero(alive & (obs.next_hop >= 0))
+        ps = obs.next_hop[us]
+        return bool((~alive[ps] | (rate[us, ps] <= 0)).any())
 
     def _route(self, obs, alive):
         n = len(alive)

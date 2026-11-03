@@ -44,3 +44,19 @@ def test_ko_routes_loop_free():
     for _ in range(20):
         obs, _, info = env.step(ko.act(obs))
     assert info["n_drop"] == 0
+
+
+def test_ko_reroutes_right_after_failure():
+    # seeds where the pre-fix Ko (holding routes for t_c steps) left reachable nodes dropped
+    for seed in (0, 4, 10):
+        env = MeshEnv(make_scenario("S6"), seed)
+        obs = env.reset()
+        ko = KoLocalCost()
+        reachable_drops = 0
+        for t in range(111):
+            obs, _, info = env.step(ko.act(obs))
+            reachable = (obs.node_feat[:, 3] >= 0) & (obs.node_feat[:, 4] > 0) & (obs.node_feat[:, 2] == 0)
+            if t >= 101:
+                reachable_drops += int(((env.demand > 0) & (info["throughput"] == 0) & reachable).sum())
+        # nodes cut off by the failure drop unavoidably; every reachable node must be rerouted at once
+        assert reachable_drops == 0, seed

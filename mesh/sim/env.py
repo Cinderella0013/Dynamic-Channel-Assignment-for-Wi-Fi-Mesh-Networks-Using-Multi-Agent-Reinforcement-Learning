@@ -116,31 +116,32 @@ class MeshEnv:
         cc = self._cc(channels)
         rate = link_rate(self.rg, cc, noise)
         paths = paths_from_next_hop(next_hop, self.gw, rate > 0, self.alive)
+        src = self.alive & ~self.is_gw
+        flows = src & (demand > 0)  # a node with no demand is not a flow
         active = np.zeros_like(self.rg.link)
-        for p in paths:
-            if p is not None:
-                for u, v in zip(p, p[1:]):
+        for s in np.flatnonzero(flows):
+            if paths[s] is not None:
+                for u, v in zip(paths[s], paths[s][1:]):
                     active[u, v] = True
         cap = link_capacity(self.rg, cc, rate, active)
         thr, load = allocate(paths, demand, cap)
 
-        src = self.alive & ~self.is_gw
         flow_u = np.log(thr + self.w.eps)
         local_u = np.zeros(cfg.n)
-        for s in np.flatnonzero(src):
-            if paths[s] is not None:
-                local_u[paths[s]] += flow_u[s]
+        for s in np.flatnonzero(flows):
+            # a dropped flow is charged log(eps) at its source, so dropping never pays
+            local_u[paths[s] if paths[s] is not None else s] += flow_u[s]
         n_sw = int(((channels != self.channels) & self.alive[:, None]).sum())
         n_rc = int(((next_hop != self.next_hop) & src).sum())
-        n_drop = int(sum(1 for s in np.flatnonzero(src) if demand[s] > 0 and paths[s] is None))
-        u = utility(thr[src], self.w.eps)
+        n_drop = int(sum(1 for s in np.flatnonzero(flows) if paths[s] is None))
+        u = utility(thr[flows], self.w.eps)
         reward = u - self.w.gamma * n_sw - self.w.delta * n_rc - self.w.eta * n_drop
 
         self.channels, self.next_hop = channels, next_hop
         self.demand, self.thr, self.load, self.cap = demand, thr, load, cap
         self.t += 1
-        info = dict(throughput=thr, aggregate=float(thr[src].sum()), jain=jain(thr[src]),
-                    p5=p5(thr[src]), utility=u, n_channel_switch=n_sw, n_route_change=n_rc,
+        info = dict(throughput=thr, aggregate=float(thr[flows].sum()), jain=jain(thr[flows]),
+                    p5=p5(thr[flows]), utility=u, n_channel_switch=n_sw, n_route_change=n_rc,
                     n_drop=n_drop, local_utility=local_u, done=self.t == cfg.episode_len)
         return self._observe(self._ext_noise(self.t)), float(reward), info
 

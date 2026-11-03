@@ -20,7 +20,7 @@ def test_regime_shift_raises_load():
 
 
 def test_scenarios():
-    assert make_scenario("S4").ext_interf == (0, 50, 150, -85.0)
+    assert make_scenario("S4").ext_interf == (1, 50, 150, -85.0)
     assert make_scenario("S2").mean_mbps == 10.0
     with pytest.raises(ValueError):
         make_scenario("S9")

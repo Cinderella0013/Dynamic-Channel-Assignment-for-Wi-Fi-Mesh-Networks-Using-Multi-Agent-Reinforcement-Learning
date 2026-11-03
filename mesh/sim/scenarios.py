@@ -20,7 +20,8 @@ _SCENARIOS = {
     "S1": dict(mean_mbps=2.0),
     "S2": dict(mean_mbps=10.0),
     "S3": dict(mean_mbps=6.0, hotspot=True),
-    "S4": dict(mean_mbps=6.0, ext_interf=(0, 50, 150, -85.0)),
+    # channel index 1: the channel M0 runs every link on (common_channel picks the largest shared)
+    "S4": dict(mean_mbps=6.0, ext_interf=(1, 50, 150, -85.0)),
     "S5": dict(mean_mbps=4.0, shift_step=100),
     "S6": dict(mean_mbps=6.0, failure_step=100),
 }

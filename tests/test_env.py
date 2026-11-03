@@ -58,3 +58,58 @@ def test_failure_cuts_off_node():
         obs, r, info = env.step(_hold(obs))   # routes NOT repaired
     assert obs.node_feat[:, 4].sum() == 19 and np.isfinite(r)
     assert info["n_drop"] >= 1                     # someone routed through the dead node
+
+
+def _m0_env(name, seed=0):
+    from mesh.baselines.m0 import M0
+    env = MeshEnv(make_scenario(name), seed)
+    return env, env.reset(), M0()
+
+
+def test_idle_routes_use_no_airtime():
+    probe, obs, m0 = _m0_env("S2")
+    probe.step(m0.act(obs))
+    relays = np.zeros(20, bool)
+    relays[probe.next_hop[probe.next_hop >= 0]] = True
+    idle = (probe.demand == 0) & ~probe.is_gw & ~relays   # unroute idle leaves only
+    assert idle.any()
+    a_env, obs_a, _ = _m0_env("S2")
+    b_env, obs_b, _ = _m0_env("S2")
+    a = m0.act(obs_a)
+    b = m0.act(obs_b)
+    b.next_hop[idle] = -1
+    _, _, ia = a_env.step(a)
+    _, _, ib = b_env.step(b)
+    assert np.allclose(ia["throughput"][~idle], ib["throughput"][~idle])
+
+
+def test_metrics_count_only_active_flows():
+    from mesh.eval.run import run_episode
+    from mesh.baselines.m0 import M0
+    assert run_episode(MeshEnv(make_scenario("S1"), 0), M0())["p5"] > 0
+
+
+def test_s4_interference_hurts_m0():
+    from dataclasses import replace
+    from mesh.eval.run import run_episode
+    from mesh.baselines.m0 import M0
+    cfg = make_scenario("S4")
+    hit = run_episode(MeshEnv(cfg, 0), M0())["aggregate"]
+    clean = run_episode(MeshEnv(replace(cfg, ext_interf=None), 0), M0())["aggregate"]
+    assert hit < clean
+
+
+def test_dropping_own_route_never_raises_local_utility():
+    probe, obs, m0 = _m0_env("S2")
+    probe.step(m0.act(obs))
+    a0 = m0.act(obs)
+    relays = set(a0.next_hop[a0.next_hop >= 0])
+    s = next(u for u in range(20) if probe.demand[u] > 0 and u not in relays and not probe.is_gw[u])
+    a_env, obs_a, _ = _m0_env("S2")
+    b_env, obs_b, _ = _m0_env("S2")
+    b = m0.act(obs_b)
+    b.next_hop[s] = -1
+    _, _, ia = a_env.step(m0.act(obs_a))
+    _, _, ib = b_env.step(b)
+    assert ib["local_utility"][s] <= ia["local_utility"][s]
+    assert ib["n_drop"] == ia["n_drop"] + 1
