@@ -27,3 +27,13 @@ def test_static_traffic_is_constant():
     from mesh.sim.traffic import Traffic
     tr = Traffic(5, np.random.default_rng(0), 6.0, static=True)
     assert np.allclose(tr.demand(0), 6.0) and np.allclose(tr.demand(7), 6.0)
+
+
+def test_suite_runs_zero_shot_sizes():
+    from mesh.rl.train import train
+    from mesh.eval.run import run_episode
+    for name in ("yuan", "li", "egat", "q_neutral"):
+        kw = {"bc_steps": 200} if name == "egat" else {}
+        ag = train(name, steps=300, seed=0, n=10, log_every=10**9, **kw)
+        m = run_episode(MeshEnv(make_scenario("C4"), 0), ag)
+        assert np.isfinite(m["reward"]), name
