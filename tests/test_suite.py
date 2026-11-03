@@ -17,8 +17,10 @@ def test_every_suite_scenario_runs():
 def test_moving_hotspot_moves():
     env = MeshEnv(make_scenario("B1"), 0)
     obs = env.reset()
+    obs, _, _ = env.step(Action(obs.channels.copy(), obs.next_hop.copy()))   # t=0 sets the first hotspot
     a = env.traffic.scale.copy()
-    for _ in range(41):
+    assert (a > 1).any()
+    for _ in range(40):
         obs, _, _ = env.step(Action(obs.channels.copy(), obs.next_hop.copy()))
     assert not np.array_equal(a, env.traffic.scale)
 

@@ -10,7 +10,7 @@ from mesh.sim.scenarios import make_scenario
 
 POLICIES = {"m0": M0, "ko": KoLocalCost}
 MEAN_KEYS = ("aggregate", "jain", "p5", "utility")
-SUM_KEYS = ("n_channel_switch", "n_route_change", "n_drop")
+SUM_KEYS = ("n_channel_switch", "n_route_change", "n_drop", "n_interrupted")
 
 
 def run_episode(env, policy):

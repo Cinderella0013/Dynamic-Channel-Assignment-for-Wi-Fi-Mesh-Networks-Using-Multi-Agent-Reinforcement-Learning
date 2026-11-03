@@ -69,15 +69,46 @@ def test_loss_rate_reported_and_ko_pays_for_switching():
 
 
 def test_utility_uses_one_second_window():
+    # per node: mean throughput over the window steps in which it had something to send;
+    # flow set: alive non-gateways with demand at some step of the window (method-independent)
     env = MeshEnv(make_scenario("S2"), 0)
     obs = env.reset()
-    hist = []
+    thr, act, dem = [], [], []
     for _ in range(14):
         obs, _, info = env.step(_hold(obs))
-        hist.append(info["throughput"])
-    win = np.mean(hist[-10:], axis=0)
-    flows = (env.offered > 0) & env.alive & ~env.is_gw
+        thr.append(info["throughput"]); act.append(env.offered > 0); dem.append(env.demand > 0)
+    T, A = np.array(thr[-10:]), np.array(act[-10:])
+    cnt = A.sum(0)
+    win = np.divide((T * A).sum(0), cnt, out=np.zeros(20), where=cnt > 0)
+    flows = np.array(dem[-10:]).any(0) & env.alive & ~env.is_gw
     assert np.isclose(info["utility"], np.log(win[flows] + env.w.eps).sum())
+    assert info["n_flows"] == flows.sum()
+
+
+def test_flow_set_is_method_independent():
+    from mesh.baselines.ko import KoLocalCost
+    from mesh.baselines.m0 import M0
+    counts = []
+    for P in (M0, KoLocalCost):
+        env = MeshEnv(make_scenario("S2"), 0)
+        obs = env.reset()
+        pol, c = P(), []
+        for _ in range(30):
+            obs, _, info = env.step(pol.act(obs))
+            c.append(info["n_flows"])
+        counts.append(c)
+    assert counts[0] == counts[1]
+
+
+def test_interruptions_are_not_drops():
+    from mesh.baselines.ko import KoLocalCost
+    env = MeshEnv(make_scenario("S2"), 0)
+    obs = env.reset()
+    ko, drops, intr = KoLocalCost(), 0, 0
+    for _ in range(60):
+        obs, _, info = env.step(ko.act(obs))
+        drops += info["n_drop"]; intr += info["n_interrupted"]
+    assert intr > 0 and drops == 0
 
 
 def test_one_step_outage_is_not_starvation():

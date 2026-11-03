@@ -1,7 +1,7 @@
 # EGAT v1 / v2 + Switching-Cost Simulator + Pre-registered Evaluation (Addendum)
 
 - Date: 2026-11-03
-- Status: design. v2 approved by the user. v1 waits on the 300k-step diagnosis (§3).
+- Status: design approved (v1 and v2). Review fixes to §2 and §5.1 pre-registered.
 - Extends: `2026-11-03-egat-mappo-mesh-design.md`. Sections here replace that spec's §5.7–5.8 (statistics, success criteria) and add §2 to its simulator.
 
 ---
@@ -34,6 +34,15 @@
 3. **Queue loss on unprepared switches.** When a node switches without queue preservation, the backlog it holds at that moment is lost. Queue preservation is CSA-style: announce the switch, buffer, then resume. The `queue_preserve` flag sits in the env and applies to the actions of whichever method has it enabled.
 4. **ACK feedback.** New edge feature `ack_ratio` = sent / offered on that link in the last step (1.0 when idle). New node feature `backlog`.
 5. **New metric `loss_rate`** = (queue overflow + switch loss) / total demand, per episode.
+6. **1 s windowed fairness (user-approved after review).**
+   - Utility, Jain and p5 use each node's throughput averaged over the last `utility_window = 10` steps. The average is taken only over the steps in which the node had something to send.
+   - The flow set is method-independent: alive non-gateways with demand at some step of the window.
+   - Reason: with switching downtime, a per-step `log(throughput)` scores a 100 ms outage, during which the queue is preserved, as starvation. Ko then lost to M0 on reward even though it beat M0 on throughput by 46%.
+7. **Switching scope (user-approved after review).**
+   - A parent change blocks the whole uplink for the downtime, so traffic relayed through that node waits as well.
+   - On an unprepared switch, every source whose planned path crosses an interrupted link loses its queued backlog. The fluid model has no relay queues, so the loss is attributed at the source.
+   - This applies to every method in the same way.
+8. **`n_drop` counts routing failures only** (no planned path to a gateway). Flows cut off for a step by switching downtime are counted separately as `n_interrupted`.
 
 ### 2.2 Fairness rules
 
@@ -61,7 +70,15 @@ The aim is to make PPO improve on the BC policy instead of eroding it.
 4. **Semi-MDP channel credit.** On decision steps the channel head's advantage uses the reward summed over the next `t_c` steps, as the original spec asked.
 5. **Lower learning rate** after BC: 1e-4. Every component keeps its ablation flag.
 
-**Pending:** the 300k-step run (same code as Plan 4). If longer training recovers on its own, item 5 may be enough. This section gets finalised with that number.
+**300k-step diagnosis (done, Plan 4 code, old simulator):** longer PPO makes things worse.
+
+| Model | S1 | S2 | S3 | S4 | S5 | S6 |
+|---|---|---|---|---|---|---|
+| BC-only | 241 | 2769 | 2757 | 2079 | 1829 | 2047 |
+| PPO 100k | 243 | 2708 | 2662 | 2043 | 1784 | 2031 |
+| PPO 300k | 243 | 2623 | 2602 | 2014 | 1743 | 1969 |
+
+Longer training is therefore not a fix. All five v1 items stand, and the KL anchor and checkpoint selection are required.
 
 ---
 
@@ -117,6 +134,10 @@ Per scenario and per metric k, the relative improvement over a reference method 
 
 Each `Δ_k` is clipped to ±1.
 
+Correction after review: the `+1` smoothing applies only to the count metric (stability). `loss_rate` uses `Δ = (R − ours)/max(R, 0.01)`, so a 10% reduction in loss scores +0.10, matching a 10% throughput gain. With `+1`, loss carried about a tenth of its stated weight.
+
+Average rank uses mid-ranks, so tied methods share the average position.
+
 `Composite = Σ w_k Δ_k`, with weights:
 
 | Metric | Weight |
@@ -142,7 +163,7 @@ Report all of these alongside each other:
   |---|---|---|
   | B1 | Moving hotspot: the hot gateway region changes every 40 steps | Ko is myopic and decides every t_c steps |
   | B2 | Periodic traffic, 60-step cycle | Li's near-static policy |
-  | B3 | Sparse topology: 25 m less area per node, so fewer neighbours | Yuan and Q-neutral form routing loops |
+  | B3 | Sparse topology: rgg spacing 37.5 m instead of 30 m (larger area per node, fewer neighbours) | Yuan and Q-neutral form routing loops |
   | B4 | Unseen grid topology | Q-neutral's tabular state |
   | B5 | Rapid regime shifts every 25 steps | Every slow-adapting method |
 

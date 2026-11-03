@@ -24,3 +24,24 @@ def test_score_and_report(tmp_path):
     assert s > 0.09 and abs(sum(WEIGHTS.values()) - 1.0) < 1e-12
     md = report(str(p), ours="egat")
     assert "ko" in md and "sensitivity" in md.lower()
+
+
+def test_loss_rate_is_relative_and_ranks_share_ties(tmp_path):
+    assert abs(delta(0.09, 0.10, True, count=False) - 0.1) < 1e-12      # 10% less loss = +0.10
+    assert abs(delta(60, 120, True) - 60 / 121) < 1e-12                  # count metric keeps +1
+    from mesh.eval.composite import _ranks
+    assert _ranks([0.0, 0.0, 0.5], lower_better=True) == [1.5, 1.5, 3.0]
+    p = tmp_path / "r.json"
+    _fake(p)
+    md = report(str(p), ours="egat")
+    assert "per-metric" in md.lower() and "holds" in md.lower()
+
+
+def test_suite_records_overrides(tmp_path):
+    from mesh.eval.suite import run_suite
+    from mesh.baselines.m0 import M0
+    out = tmp_path / "s.json"
+    res = run_suite({"m0": M0}, ["S1"], range(1), str(out), overrides={"queue_preserve": True, "downtime_steps": 2})
+    d = json.load(open(out))
+    assert d["overrides"] == {"queue_preserve": True, "downtime_steps": 2} and len(d["commit"]) >= 40
+    assert "m0" in res

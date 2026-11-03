@@ -8,12 +8,15 @@ from mesh.sim.scenarios import SUITE_A, SUITE_B, SUITE_C
 
 WEIGHTS = {"aggregate": 0.25, "jain": 0.20, "p5": 0.20, "loss_rate": 0.20, "stability": 0.15}
 LOWER_BETTER = {"loss_rate", "stability"}
+COUNT_METRICS = {"stability"}  # counts that can be 0: smoothed with +1
 
 
-def delta(ours, ref, lower_better):
+def delta(ours, ref, lower_better, count=True):
     """Relative improvement of ours over ref, clipped to [-1, 1]."""
-    if lower_better:
+    if lower_better and count:
         d = (ref - ours) / (abs(ref) + 1.0)  # +1 smooths count metrics that can be 0
+    elif lower_better:
+        d = (ref - ours) / max(abs(ref), 0.01)  # rates: plain relative change
     elif ref == 0:
         d = 0.0 if ours == 0 else float(np.sign(ours))
     else:
@@ -30,7 +33,22 @@ def _means(results, method, scenario):
 
 def score(results, method, ref, scenario, weights=WEIGHTS):
     ours, base = _means(results, method, scenario), _means(results, ref, scenario)
-    return sum(w * delta(ours[k], base[k], k in LOWER_BETTER) for k, w in weights.items())
+    return sum(w * delta(ours[k], base[k], k in LOWER_BETTER, k in COUNT_METRICS) for k, w in weights.items())
+
+
+def _ranks(values, lower_better):
+    """Mid-ranks (1 = best); ties share the average of their positions."""
+    v = np.asarray(values, dtype=float) * (1 if lower_better else -1)
+    order = np.argsort(v, kind="stable")
+    ranks = np.empty(len(v))
+    i = 0
+    while i < len(v):
+        j = i
+        while j + 1 < len(v) and v[order[j + 1]] == v[order[i]]:
+            j += 1
+        ranks[order[i:j + 1]] = (i + j) / 2 + 1
+        i = j + 1
+    return ranks.tolist()
 
 
 def _load(paths):
@@ -71,13 +89,18 @@ def report(paths, ours="egat"):
     for s in scen:
         means = {m: _means(results, m, s) for m in methods}
         for k in WEIGHTS:
-            order = sorted(methods, key=lambda m: means[m][k], reverse=k not in LOWER_BETTER)
-            for i, m in enumerate(order):
-                ranks[m].append(i + 1)
+            for m, r in zip(methods, _ranks([means[m][k] for m in methods], k in LOWER_BETTER)):
+                ranks[m].append(r)
     out += [f"| {m} | {np.mean(r):.2f} |" for m, r in sorted(ranks.items(), key=lambda kv: np.mean(kv[1]))]
 
+    out += ["", "## Per-metric means (5 metrics x method x scenario)"]
+    for k in WEIGHTS:
+        out += ["", f"### {k}", "", "| method | " + " | ".join(scen) + " |", "|---" * (len(scen) + 1) + "|"]
+        out += ["| " + m + " | " + " | ".join(f"{_means(results, m, s)[k]:.3f}" for s in scen) + " |"
+                for m in methods if all(s in results[m] for s in scen)]
+
     out += ["", "## Weight sensitivity (each weight x0.5 / x1.5, renormalised; A+B)", "",
-            "| reference | min | max |", "|---|---|---|"]
+            "| reference | min | max | +10% holds for all weights |", "|---|---|---|---|"]
     for ref in refs:
         vals = []
         for k in WEIGHTS:
@@ -86,7 +109,7 @@ def report(paths, ours="egat"):
                 w[k] *= f
                 tot = sum(w.values())
                 vals.append(_mean_score(results, ours, ref, ab, {kk: v / tot for kk, v in w.items()}))
-        out.append(f"| {ref} | {min(vals):+.3f} | {max(vals):+.3f} |")
+        out.append(f"| {ref} | {min(vals):+.3f} | {max(vals):+.3f} | {'yes' if min(vals) >= 0.10 else 'no'} |")
     return "\n".join(out)
 
 

@@ -179,19 +179,26 @@ class MeshEnv:
         self.chan_down = np.maximum(self.chan_down - 1, 0)
         self.route_down = np.maximum(self.route_down - 1, 0)
 
-        # fairness and utility on throughput averaged over the last utility_window steps, so a
-        # 100 ms switching outage with a preserved queue is not scored as starvation
-        self.thr_hist = (self.thr_hist + [thr])[-cfg.utility_window:]
-        thr_w = np.mean(self.thr_hist, axis=0)
+        # fairness and utility on a 1 s window (utility_window steps), so a 100 ms switching outage
+        # with a preserved queue is not scored as starvation. Per node, throughput is averaged over
+        # the window steps in which it had something to send. The flow set is method-independent:
+        # alive non-gateways with demand at some step of the window.
+        active = offered > 0
+        self.thr_hist = (self.thr_hist + [(thr * active, active, demand > 0)])[-cfg.utility_window:]
+        sent_w = np.sum([h[0] for h in self.thr_hist], axis=0)
+        cnt_w = np.sum([h[1] for h in self.thr_hist], axis=0)
+        thr_w = np.divide(sent_w, cnt_w, out=np.zeros(cfg.n), where=cnt_w > 0)
+        mflows = src & np.any([h[2] for h in self.thr_hist], axis=0)
         flow_u = np.log(thr_w + self.w.eps)
         local_u = np.zeros(cfg.n)
-        for s in np.flatnonzero(flows):
-            # a dropped flow is charged log(eps) at its source, so dropping never pays
-            local_u[paths[s] if paths[s] is not None else s] += flow_u[s]
+        for s in np.flatnonzero(mflows):
+            # a starved flow is charged log(eps) along its planned path (at its source if unroutable)
+            local_u[planned[s] if planned[s] is not None else s] += flow_u[s]
         n_sw = int(((channels != self.channels) & self.alive[:, None]).sum())
         n_rc = int(((next_hop != self.next_hop) & src).sum())
-        n_drop = int(sum(1 for s in np.flatnonzero(flows) if paths[s] is None))
-        u = utility(thr_w[flows], self.w.eps)
+        n_drop = int(sum(1 for s in np.flatnonzero(flows) if planned[s] is None))  # routing failures
+        n_int = int(sum(1 for s in np.flatnonzero(flows) if planned[s] is not None and paths[s] is None))
+        u = utility(thr_w[mflows], self.w.eps)
         reward = u - self.w.gamma * n_sw - self.w.delta * n_rc - self.w.eta * n_drop
 
         self.channels, self.next_hop = channels, next_hop
@@ -199,11 +206,11 @@ class MeshEnv:
         self.backlog = new_backlog
         self.sent = sent
         self.t += 1
-        info = dict(throughput=thr, aggregate=float(thr[flows].sum()), jain=jain(thr_w[flows]),
-                    p5=p5(thr_w[flows]), utility=u, n_channel_switch=n_sw, n_route_change=n_rc,
+        info = dict(throughput=thr, aggregate=float(thr[flows].sum()), jain=jain(thr_w[mflows]),
+                    p5=p5(thr_w[mflows]), utility=u, n_channel_switch=n_sw, n_route_change=n_rc,
                     n_drop=n_drop, local_utility=local_u, done=self.t == cfg.episode_len,
                     lost=float(lost_switch + lost_overflow), demand_total=float(demand.sum()),
-                    backlog_total=float(self.backlog.sum()))
+                    backlog_total=float(self.backlog.sum()), n_interrupted=n_int, n_flows=int(mflows.sum()))
         # observation reflects the step just executed (no lookahead on the interferer)
         return self._observe(noise), float(reward), info
 
