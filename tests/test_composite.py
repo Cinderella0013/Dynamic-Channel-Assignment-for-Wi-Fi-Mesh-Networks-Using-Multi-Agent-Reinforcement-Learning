@@ -45,3 +45,35 @@ def test_suite_records_overrides(tmp_path):
     d = json.load(open(out))
     assert d["overrides"] == {"queue_preserve": True, "downtime_steps": 2} and len(d["commit"]) >= 40
     assert "m0" in res
+
+
+def _seeds(path, n, ours_gain):
+    rng = __import__("numpy").random.default_rng(len(str(path)))
+    def m(agg, sw):
+        return dict(aggregate=list(agg), jain=[.6] * n, p5=[1.0] * n, loss_rate=[.1] * n,
+                    n_channel_switch=list(sw), n_route_change=[0] * n)
+    base = 100 + rng.normal(size=n)
+    res = {"ko": {"S2": m(base, [100] * n)}, "egat": {"S2": m(base * (1 + ours_gain), [100] * n)}}
+    json.dump({"commit": "x", "results": res}, open(path, "w"))
+
+
+def test_files_pool_seeds_and_significance(tmp_path):
+    from mesh.eval.composite import _load, significance
+    p1, p2 = tmp_path / "t0.json", tmp_path / "t1.json"
+    _seeds(p1, 3, 0.2)
+    _seeds(p2, 3, 0.2)
+    res, _ = _load([str(p1), str(p2)])
+    assert len(res["egat"]["S2"]["aggregate"]) == 6          # training seeds pooled, not overwritten
+    sig = significance(res, "egat", "ko", ["S2"])
+    assert sig["p"]["S2"] < 0.05 and sig["frac_sig"] == 1.0 and sig["ci"][0] > 0.04
+    md = report([str(p1), str(p2)], ours="egat")
+    assert "significance" in md.lower()
+
+
+def test_no_effect_is_not_significant(tmp_path):
+    from mesh.eval.composite import _load, significance
+    p = tmp_path / "t.json"
+    _seeds(p, 6, 0.0)
+    res, _ = _load([str(p)])
+    sig = significance(res, "egat", "ko", ["S2"])
+    assert sig["frac_sig"] == 0.0 and sig["ci"][0] <= 0 <= sig["ci"][1]
