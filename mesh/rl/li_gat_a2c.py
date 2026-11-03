@@ -63,8 +63,8 @@ class GATA2CNet(nn.Module):
 
 
 class LiAgent:
-    def __init__(self, lr=5e-3, lr_min=1e-4, lr_decay=0.96, lr_decay_every=1000, gamma=0.98,
-                 entropy=0.01, value_coef=0.5, seed=0, device=None):
+    def __init__(self, lr=1e-4, lr_min=1e-5, lr_decay=0.96, lr_decay_every=1000, gamma=0.98,
+                 entropy=0.05, value_coef=0.5, seed=0, device=None):
         self.hp = dict(lr=lr, lr_min=lr_min, lr_decay=lr_decay, lr_decay_every=lr_decay_every,
                        gamma=gamma, entropy=entropy, value_coef=value_coef, seed=seed)
         self.device = torch.device(device or ("cuda" if torch.cuda.is_available() else "cpu"))
@@ -115,7 +115,12 @@ class LiAgent:
         logp_a = logp.gather(-1, a[..., None])[..., 0]
         ent = -(logp.exp() * logp).sum(-1)
         alive = torch.as_tensor(alive_mask(obs)[None], dtype=torch.float32, device=self.device)
-        per_agent = (-logp_a * adv.detach() + self.hp["value_coef"] * adv ** 2
+        # normalise the policy-gradient advantage over alive agents: raw log-utility advantages
+        # are several units, which saturated the softmax within ~60 steps
+        a_pg = adv.detach()
+        live = alive > 0
+        a_pg = (a_pg - a_pg[live].mean()) / (a_pg[live].std() + 1e-6) if live.sum() > 1 else a_pg
+        per_agent = (-logp_a * a_pg + self.hp["value_coef"] * adv ** 2
                      - self.hp["entropy"] * ent)
         loss = (per_agent * alive).sum() / alive.sum().clamp(min=1)
         self.opt.zero_grad()

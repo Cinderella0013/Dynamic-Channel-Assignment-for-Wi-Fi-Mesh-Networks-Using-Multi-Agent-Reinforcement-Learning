@@ -61,7 +61,7 @@ This is the assumed source for "Li". The user has not yet confirmed it.
 - z-scored node inputs (Eq. 10).
 - A 2-layer GAT with additive LeakyReLU attention: 8 heads in the first layer, 16-dimensional output, dropout 0.6.
 - Actor and critic on `[x ‖ z]` (Eq. 19), both with 500-250 hidden layers.
-- Learning rate from 0.005 decaying to 1e-4 (×0.96 every 1000 updates).
+- Learning-rate decay schedule (×0.96 every 1000 updates).
 
 **Changed:**
 - **Critic outputs V(s).** The paper uses Q in Eq. 24 and V in the text.
@@ -69,5 +69,9 @@ This is the assumed source for "Li". The user has not yet confirmed it.
 - **No auxiliary GAT MSE loss.** Eq. 16–17 compare a scalar label with a vector embedding, so the loss is ill-defined.
 - **z-score statistics** use a running EMA with momentum 0.01, updated only during learning (once per update; the bootstrap pass runs in eval mode). The standard deviation is floored at 0.1 and z is clipped to ±5, so features that stay constant for a long time do not explode on rare events (S4/S6). The paper's fixed training-set statistics do not exist for an online learner.
 - **γ = 0.98.** The paper's value is ambiguous: it lists λ = 0.5 under "discount factor".
-- **Not specified in the paper:** entropy 0.01, value coefficient 0.5, Adam optimizer, GAT hidden size 8 per head.
+- **Learning rate 1e-4 (floor 1e-5), not the paper's 0.005.** The paper updates from 2000-sample replay batches; this adaptation updates on-policy every env step. At 0.005 the softmax saturated within ~60 steps, before any learning: two training runs with different reward code produced byte-identical logs, and reward stayed flat near 960. At 1e-4 reward rises from about −1800 to +1450 within 15 episodes.
+- **Policy-gradient advantage normalised over alive agents in each update.** Standard A2C practice; raw log-utility advantages are several units.
+- **Entropy coefficient 0.05.** Not given in the paper.
+- **The policy still becomes near-deterministic after a few thousand steps.** This is structural rather than a bug: with a per-step switching penalty, a stochastic policy that resamples every step keeps paying for switches, so on-policy A2C is pushed toward determinism. Yuan's ε-greedy exploration is not learned, so it is not affected.
+- **Not specified in the paper:** value coefficient 0.5, Adam optimizer, GAT hidden size 8 per head.
 - **Actions:** no power action.

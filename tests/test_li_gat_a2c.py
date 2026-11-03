@@ -60,3 +60,21 @@ def test_learn_updates_input_stats_once():
     batch_mean = s[0].reshape(-1, s[0].shape[-1]).mean(0)
     ag.learn(obs, ag.last_action_idx, np.zeros(20), obs, done=False)
     assert torch.allclose(ag.net.mu, 0.99 * before + 0.01 * batch_mean, atol=1e-5)
+
+
+def test_policy_keeps_exploring_after_one_episode():
+    from mesh.rl.agents_io import per_agent_reward
+    env = MeshEnv(make_scenario("S2"), 0)
+    obs = env.reset()
+    ag = LiAgent(seed=0, device="cpu")
+    for _ in range(200):
+        act = ag.act(obs, explore=True)
+        a = ag.last_action_idx
+        nxt, r, info = env.step(act)
+        ag.learn(obs, a, per_agent_reward(obs, act, info, r, env.w), nxt, info["done"])
+        obs = nxt
+    s, _ = ag._prep(MeshEnv(make_scenario("S2"), 1).reset())
+    ag.net.eval()
+    with torch.no_grad():
+        p = torch.softmax(ag.net(*s)[0][0], -1)
+    assert p.max(-1).values.mean() < 0.6     # pre-fix: ~0.9+ within 60 steps
