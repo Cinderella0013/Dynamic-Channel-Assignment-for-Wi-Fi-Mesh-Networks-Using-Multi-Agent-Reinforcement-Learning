@@ -59,19 +59,18 @@ class MeshEnv:
             self.seed = seed
         cfg = self.cfg
         top_ss, traffic_ss, _ = np.random.SeedSequence(self.seed).spawn(3)
-        self.top = generate_topology(cfg.kind, cfg.n, cfg.n_gateways, np.random.default_rng(top_ss))
+        self.top = generate_topology(cfg.kind, cfg.n, cfg.n_gateways, np.random.default_rng(top_ss), cfg.spacing)
         self.rg = build_radio_graph(self.top)
         self.gw = self.top.gateways
         self.is_gw = np.zeros(cfg.n, bool)
         self.is_gw[list(self.gw)] = True
         self.alive = np.ones(cfg.n, bool)
-        boost = None
-        if cfg.hotspot:
-            per_gw = np.stack([hops_to_gateway(self.rg.link, (g,), self.alive) for g in self.gw])
-            per_gw = np.where(per_gw < 0, np.iinfo(int).max, per_gw)
-            boost = np.flatnonzero((per_gw.argmin(axis=0) == 0) & ~self.is_gw)
+        per_gw = np.stack([hops_to_gateway(self.rg.link, (g,), self.alive) for g in self.gw])
+        self.nearest_gw = np.where(per_gw < 0, np.iinfo(int).max, per_gw).argmin(axis=0)
+        boost = np.flatnonzero((self.nearest_gw == 0) & ~self.is_gw) if cfg.hotspot else None
         self.traffic = Traffic(cfg.n, np.random.default_rng(traffic_ss), cfg.mean_mbps,
-                               boost_nodes=boost, shift_step=cfg.shift_step)
+                               boost_nodes=boost, shift_step=cfg.shift_step, periodic=cfg.periodic,
+                               shift_period=cfg.shift_period, static=cfg.static)
         self.t = 0
         self.channels = np.tile([0, 1], (cfg.n, 1))
         self.next_hop = min_hop_next_hop(self.rg.link, self.gw, self.alive)
@@ -128,6 +127,9 @@ class MeshEnv:
             lost_switch += self.backlog[dead]  # counted once, at death
             self.backlog[dead] = 0.0
         noise = self._ext_noise(t)
+        if cfg.hotspot_period and t % cfg.hotspot_period == 0:  # B1: hotspot moves to the next gateway
+            k = (t // cfg.hotspot_period) % len(self.gw)
+            self.traffic.set_boost(np.flatnonzero((self.nearest_gw == k) & ~self.is_gw))
         demand = self.traffic.demand(t) * self.alive * ~self.is_gw
         offered = self.backlog + demand
         src = self.alive & ~self.is_gw

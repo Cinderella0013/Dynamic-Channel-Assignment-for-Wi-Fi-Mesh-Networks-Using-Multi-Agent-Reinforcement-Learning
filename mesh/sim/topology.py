@@ -32,9 +32,9 @@ def _connected(adj):
     return seen.all()
 
 
-def generate_topology(kind, n, n_gateways, rng):
+def generate_topology(kind, n, n_gateways, rng, spacing=30.0):
     if kind == "rgg":
-        side = 30 * np.sqrt(n)
+        side = spacing * np.sqrt(n)
         for _ in range(1000):
             pos = rng.uniform(0, side, size=(n, 2))
             if _connected(link_adjacency(pos)):
