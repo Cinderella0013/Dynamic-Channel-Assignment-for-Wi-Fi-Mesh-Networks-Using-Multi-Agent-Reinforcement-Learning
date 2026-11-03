@@ -13,6 +13,7 @@ Appendix material for spec §5.5: every way the RL baselines differ from their s
 - **Reward:** `r_i = 0.5·local_utility_i + 0.5·reward_global/n_alive − 0.1·switches_i − 0.05·route_change_i`. `switches_i` counts the node's own radio-1 change; a child's radio-0 change caused by its parent retuning is charged to the parent. Both terms use the env's proportional-fair log utility. The papers use different rewards: Yuan uses interference-temperature × efficiency, and Li uses a V2N/V2V rate mix. One shared reward keeps the comparison fair.
 - **Budget:** each learner gets the same number of env steps. Every episode draws a scenario uniformly from S1–S6 with a fresh topology seed, n = 20.
 - **Discount:** γ = 0.98 for all learners.
+- **Greedy evaluation decoding:** at evaluation the joint argmax picks the parent slot. The channel is then chosen by the shared sequential conflict-aware decoder (`agents_io.sequential_channels`, flag `seq_decode`, default on), using the node's scores over channels for that slot. EGAT-MAPPO uses the same decoder, so it gives no method an advantage. Without it, interchangeable channel labels make every node in a symmetric state pick the same channel.
 - **Gradient clipping:** gradient norm is clipped at 10 for both neural baselines. Neither paper mentions it. It keeps early Q-values and advantages from blowing up under log-utility rewards.
 - **Tuning:** hyperparameters are paper defaults where given. The Optuna search (20 trials per method) belongs to Plan 5.
 

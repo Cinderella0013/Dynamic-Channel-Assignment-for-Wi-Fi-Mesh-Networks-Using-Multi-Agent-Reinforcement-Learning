@@ -7,7 +7,7 @@ import torch
 from torch import nn
 
 from mesh.rl.agents_io import (F_M, F_O, N_ACTIONS, action_mask, agent_features, alive_mask,
-                               decode, neighbor_slots)
+                               decode, greedy_with_sequential_channels, neighbor_slots)
 from mesh.sim.env import edge_matrix
 
 
@@ -64,9 +64,9 @@ class GATA2CNet(nn.Module):
 
 class LiAgent:
     def __init__(self, lr=1e-4, lr_min=1e-5, lr_decay=0.96, lr_decay_every=1000, gamma=0.98,
-                 entropy=0.05, value_coef=0.5, seed=0, device=None):
+                 entropy=0.05, value_coef=0.5, seed=0, device=None, seq_decode=True):
         self.hp = dict(lr=lr, lr_min=lr_min, lr_decay=lr_decay, lr_decay_every=lr_decay_every,
-                       gamma=gamma, entropy=entropy, value_coef=value_coef, seed=seed)
+                       gamma=gamma, entropy=entropy, value_coef=value_coef, seed=seed, seq_decode=seq_decode)
         self.device = torch.device(device or ("cuda" if torch.cuda.is_available() else "cpu"))
         torch.manual_seed(seed)
         self.gen = torch.Generator(device="cpu").manual_seed(seed)
@@ -95,6 +95,9 @@ class LiAgent:
             logits = self.net(*s)[0][0].cpu()
         if explore:
             a = torch.multinomial(torch.softmax(logits, -1), 1, generator=self.gen)[:, 0].numpy()
+        elif self.hp["seq_decode"]:
+            masked = np.where(s[2][0].cpu().numpy(), logits.numpy(), -np.inf)
+            a = greedy_with_sequential_channels(obs, slots, masked)
         else:
             a = logits.argmax(-1).numpy()
         self.last_action_idx = a

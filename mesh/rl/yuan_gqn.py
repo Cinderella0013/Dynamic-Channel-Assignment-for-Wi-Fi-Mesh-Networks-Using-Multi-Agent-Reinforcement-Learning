@@ -7,7 +7,7 @@ import torch
 from torch import nn
 
 from mesh.rl.agents_io import (F_M, F_O, N_ACTIONS, action_mask, agent_features, alive_mask,
-                               decode, neighbor_slots)
+                               decode, greedy_with_sequential_channels, neighbor_slots)
 
 N_NBR = 3  # Yuan Table 2: number of neighbours
 
@@ -54,10 +54,10 @@ class GQNNet(nn.Module):
 
 class YuanAgent:
     def __init__(self, lr=1e-3, gamma=0.98, batch=10, buffer=10_000, soft_tau=0.01, kl_lambda=0.03,
-                 eps_start=0.6, eps_end=0.05, eps_decay_steps=50_000, seed=0, device=None):
+                 eps_start=0.6, eps_end=0.05, eps_decay_steps=50_000, seed=0, device=None, seq_decode=True):
         self.hp = dict(lr=lr, gamma=gamma, batch=batch, buffer=buffer, soft_tau=soft_tau,
                        kl_lambda=kl_lambda, eps_start=eps_start, eps_end=eps_end,
-                       eps_decay_steps=eps_decay_steps, seed=seed)
+                       eps_decay_steps=eps_decay_steps, seed=seed, seq_decode=seq_decode)
         self.device = torch.device(device or ("cuda" if torch.cuda.is_available() else "cpu"))
         torch.manual_seed(seed)
         self.rng = np.random.default_rng(seed)
@@ -98,6 +98,8 @@ class YuanAgent:
             q = self._q(self.net, [s])[0][0].cpu().numpy()
         q = np.where(s["mask"], q, -np.inf)
         a = q.argmax(axis=1)
+        if not explore and self.hp["seq_decode"]:
+            a = greedy_with_sequential_channels(obs, slots, q)
         if explore:
             eps = self._eps()
             for i in np.flatnonzero(self.rng.random(len(a)) < eps):

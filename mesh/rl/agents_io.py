@@ -104,3 +104,38 @@ def per_agent_reward(prev_obs, action, info, reward_global, w, lam=0.5):
     r = (lam * info["local_utility"] + (1 - lam) * reward_global / max(alive.sum(), 1)
          - w.gamma * sw - w.delta * rc)
     return np.where(alive, r, 0.0)
+
+
+def sequential_channels(obs, slots, scores, j):
+    """Greedy (evaluation) channel choice shared by every learned method.
+
+    Channel labels are interchangeable, so per-node argmax gives every node the same channel
+    whenever nodes see the same state. Nodes decide in tree order (parents first, like Ko's round);
+    each takes its highest-scoring channel not already taken by a decided conflict neighbour
+    (or the least-used one if all are taken). Needs one sequential coordination round, as Ko does.
+    """
+    n = len(j)
+    alive = alive_mask(obs)
+    valid = _valid_slots(obs, slots)
+    parent = np.where(valid[np.arange(n), j], slots[np.arange(n), j], -1)
+    depth = np.zeros(n, dtype=int)
+    for u in range(n):
+        v, d = u, 0
+        while parent[v] >= 0 and d <= n:
+            v, d = parent[v], d + 1
+        depth[u] = d
+    conflict = (edge_matrix(obs, "is_conflict") > 0) & alive[:, None] & alive[None, :]
+    c = np.full(n, -1, dtype=int)
+    for u in sorted(range(n), key=lambda u: (depth[u], u)):
+        used = np.bincount(c[conflict[u] & (c >= 0)], minlength=N_DL_CH)
+        c[u] = int(np.argmax(np.asarray(scores[u], dtype=float) - 1e3 * used))
+    return c
+
+
+def greedy_with_sequential_channels(obs, slots, joint):
+    """joint: (n, N_ACTIONS) scores with invalid actions at -inf. Returns action indices."""
+    n = len(joint)
+    a = joint.argmax(axis=1)
+    j = a % K_SLOTS
+    scores = joint.reshape(n, N_DL_CH, K_SLOTS)[np.arange(n), :, j]
+    return sequential_channels(obs, slots, scores, j) * K_SLOTS + j

@@ -12,7 +12,7 @@ def test_discretize_is_hashable_and_small():
 def test_learns_constant_best_action():
     env = MeshEnv(make_scenario("S1"), 0)
     obs = env.reset()
-    q = QNeutral(eps_start=1.0, eps_end=1.0, seed=0)
+    q = QNeutral(eps_start=1.0, eps_end=1.0, seed=0, seq_decode=False)
     for _ in range(300):
         q.act(obs, explore=True)
         a = q.last_action_idx

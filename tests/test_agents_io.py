@@ -118,3 +118,21 @@ def test_gateway_parent_onehot_is_none():
     o, _ = agent_features(obs, neighbor_slots(obs))
     for g in obs.gateways:
         assert o[g, -1] == 1.0 and o[g, -5:-1].sum() == 0
+
+
+def test_sequential_channels_spread_identical_scores():
+    from mesh.rl.agents_io import sequential_channels
+    _, obs = _obs()
+    slots = neighbor_slots(obs)
+    j = np.zeros(20, int)
+    c = sequential_channels(obs, slots, np.zeros((20, 6)), j)
+    assert len(np.unique(c)) >= 3
+
+
+def test_all_learners_greedy_channels_diverse():
+    from mesh.rl.yuan_gqn import YuanAgent
+    from mesh.rl.li_gat_a2c import LiAgent
+    from mesh.rl.q_neutral import QNeutral
+    _, obs = _obs()
+    for ag in (YuanAgent(seed=0, device="cpu"), LiAgent(seed=0, device="cpu"), QNeutral(seed=0)):
+        assert len(np.unique(ag.act(obs).channels[:, 1])) >= 3, type(ag).__name__

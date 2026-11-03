@@ -70,3 +70,20 @@ def test_greedy_channels_are_diverse():
     ag = EGATAgent(seed=0, use_bc=False, use_fallback=False, device="cpu")
     a = ag.act(obs, explore=False)                     # t=0: every node sees identical channel state
     assert len(np.unique(a.channels[:, 1])) >= 3
+
+
+def test_fallback_is_entropy_only_and_decentralised():
+    env, obs = _env()
+    ag = EGATAgent(seed=0, use_bc=False, fallback_entropy=1e9, device="cpu")
+    ag.vko_ready = True                      # pre-fix: value check would fire here
+    ag.act(obs)
+    assert ag.fallback_rate == 0.0
+
+
+def test_fallback_rate_resets_when_disabled():
+    env, obs = _env()
+    ag = EGATAgent(seed=0, use_bc=False, fallback_entropy=-1.0, device="cpu")
+    ag.act(obs)
+    ag.cfg.use_fallback = False
+    ag.act(obs)
+    assert ag.fallback_rate == 0.0

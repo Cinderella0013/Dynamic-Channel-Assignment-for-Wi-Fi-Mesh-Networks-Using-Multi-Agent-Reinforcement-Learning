@@ -4,7 +4,7 @@ import pickle
 import numpy as np
 
 from mesh.rl.agents_io import (K_SLOTS, N_ACTIONS, action_mask, agent_features, alive_mask,
-                               decode, neighbor_slots)
+                               decode, greedy_with_sequential_channels, neighbor_slots)
 
 
 def discretize(o, m):
@@ -20,12 +20,13 @@ def discretize(o, m):
 
 class QNeutral:
     def __init__(self, alpha=0.1, gamma=0.98, eps_start=0.6, eps_end=0.05,
-                 eps_decay_steps=50_000, seed=0):
+                 eps_decay_steps=50_000, seed=0, seq_decode=True):
         self.alpha, self.gamma = alpha, gamma
         self.eps_start, self.eps_end, self.eps_decay_steps = eps_start, eps_end, eps_decay_steps
         self.rng = np.random.default_rng(seed)
         self.q = {}
         self.steps = 0
+        self.seq_decode = seq_decode
         self.last_action_idx = None
 
     def _eps(self):
@@ -50,6 +51,9 @@ class QNeutral:
                 a[i] = self.rng.choice(valid)
             else:
                 a[i] = valid[np.argmax(self._row(k)[valid])]
+        if not explore and getattr(self, "seq_decode", True):
+            joint = np.stack([np.where(mask[i], self._row(k), -np.inf) for i, k in enumerate(keys)])
+            a = greedy_with_sequential_channels(obs, slots, joint)
         if explore:
             self.steps += 1
         self.last_action_idx = a

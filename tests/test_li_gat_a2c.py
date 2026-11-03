@@ -27,7 +27,7 @@ def test_adjacency_is_conflict_graph_with_self_loops():
 def test_learns_constant_best_action():
     env = MeshEnv(make_scenario("S1"), 0)
     obs = env.reset()
-    ag = LiAgent(seed=0, lr=3e-3)
+    ag = LiAgent(seed=0, lr=3e-3, seq_decode=False)
     for _ in range(400):
         ag.act(obs, explore=True)
         a = ag.last_action_idx

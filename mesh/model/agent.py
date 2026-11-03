@@ -6,7 +6,7 @@ from mesh.baselines.ko import KoLocalCost
 from mesh.model.egat import EGATConfig, EGATNet
 from mesh.model.ko_prior import ko_action_idx, ko_channel_costs, ko_slot_costs
 from mesh.rl.agents_io import (K_SLOTS, N_DL_CH, _valid_slots, agent_features, alive_mask, decode,
-                               neighbor_slots)
+                               neighbor_slots, sequential_channels)
 from mesh.sim.env import EDGE_FEATS, NODE_FEATS
 
 _INPUT_KEYS = ("x", "e", "adj", "ko_slot", "ko_chan", "slot_mask")
@@ -24,7 +24,6 @@ class EGATAgent:
         self.ko = KoLocalCost()
         self.steps = 0
         self.phase = "bc" if self.cfg.use_bc else "ppo"
-        self.vko_ready = False  # V_Ko is only meaningful after it was fitted on Ko returns
         self.h = None
         self.last_action_idx = None
         self.fallback_rate = 0.0
@@ -88,17 +87,19 @@ class EGATAgent:
             c = torch.multinomial(chan.probs, 1, generator=self.gen)[:, 0]
         else:
             j = route.probs.argmax(-1)
-            c = self._greedy_channels(obs, p, chan.logits, j.numpy())
+            if self.cfg.seq_decode:
+                c = torch.as_tensor(sequential_channels(obs, p["slots"], chan.logits.numpy(), j.numpy()))
+            else:
+                c = chan.probs.argmax(-1)
         if not p["is_chan_step"]:
             c = torch.as_tensor(p["cur_chan"])
         a = (c * K_SLOTS + j).numpy()
 
+        self.fallback_rate = 0.0
         if not explore and self.cfg.use_fallback:
-            ent = (route.entropy() + chan.entropy()).numpy()
-            unsure = ent > self.cfg.fallback_entropy
-            if self.vko_ready:
-                v, vko = out["value"][0].cpu().numpy(), out["value_ko"][0].cpu().numpy()
-                unsure |= v < vko - self.cfg.fallback_margin
+            # entropy-only: uses this node's own heads, so execution stays decentralised
+            ent = route.entropy() + (chan.entropy() if p["is_chan_step"] else 0.0)
+            unsure = ent.numpy() > self.cfg.fallback_entropy
             unsure &= p["alive"]
             if unsure.any():
                 a = np.where(unsure, ko_action_idx(obs, p["slots"], self.ko), a)
@@ -109,30 +110,6 @@ class EGATAgent:
                              value=out["value"][0].cpu().numpy(), is_chan_step=p["is_chan_step"])
         self.last_action_idx = a
         return decode(obs, p["slots"], a)
-
-    def _greedy_channels(self, obs, p, logits, j):
-        """Sequential conflict-aware argmax, parents first (like Ko's round).
-
-        Channel labels are interchangeable, so a plain per-node argmax gives every node the same
-        channel when they see the same state. Each node takes its best channel not already taken
-        by a decided conflict neighbour (or the least-used one if all are taken).
-        """
-        n = len(j)
-        slots = p["slots"]
-        parent = np.where(p["slot_mask"][np.arange(n), j], slots[np.arange(n), j], -1)
-        depth = np.zeros(n, dtype=int)
-        for u in range(n):
-            v, d = u, 0
-            while parent[v] >= 0 and d <= n:
-                v, d = parent[v], d + 1
-            depth[u] = d
-        conflict = p["adj"] & ~np.eye(n, dtype=bool)
-        logits = logits.numpy()
-        c = np.full(n, -1, dtype=int)
-        for u in sorted(range(n), key=lambda u: (depth[u], u)):
-            used = np.bincount(c[conflict[u] & (c >= 0)], minlength=N_DL_CH)
-            c[u] = int(np.argmax(logits[u] - 1e3 * used))
-        return torch.as_tensor(c)
 
     # ---------- learning ----------
     def reward_lam(self, step, total):
@@ -245,7 +222,7 @@ class EGATAgent:
         for epoch in range(cfg.bc_epochs):
             order = np.random.default_rng(self.seed + epoch).permutation(T)
             hits = total = 0
-            tot = dict(bc_loss=0.0, vko_loss=0.0)
+            tot = dict(bc_loss=0.0, value_loss=0.0)
             for start in range(0, T, cfg.minibatch):
                 idx = order[start:start + cfg.minibatch]
                 items = [buf[i]["p"] for i in idx]
@@ -261,7 +238,7 @@ class EGATAgent:
                 ce_r = torch.nn.functional.cross_entropy(out["route_logits"].transpose(1, 2), j, reduction="none")
                 ce_c = torch.nn.functional.cross_entropy(out["chan_logits"].transpose(1, 2), c, reduction="none")
                 g = torch.as_tensor(ret[idx], device=dev, dtype=torch.float32)
-                v_l = (out["value"] - g) ** 2 + (out["value_ko"] - g) ** 2
+                v_l = (out["value"] - g) ** 2  # critic warm start on Ko's returns
                 per = allowed * ce_r + is_chan * ce_c + 0.5 * v_l
                 loss = (per * alive).sum() / alive.sum().clamp(min=1)
                 opt.zero_grad()
@@ -274,13 +251,11 @@ class EGATAgent:
                     hits += (ok.float() * alive).sum().item()
                     total += alive.sum().item()
                 tot["bc_loss"] += ((allowed * ce_r + is_chan * ce_c) * alive).sum().item() / max(alive.sum().item(), 1)
-                tot["vko_loss"] += (((out["value_ko"] - g) ** 2) * alive).sum().item() / max(alive.sum().item(), 1)
+                tot["value_loss"] += ((v_l * alive).sum() / alive.sum().clamp(min=1)).item()
             n_mb = int(np.ceil(T / cfg.minibatch))
-            stats = dict(agreement=hits / max(total, 1), bc_loss=tot["bc_loss"] / n_mb, vko_loss=tot["vko_loss"] / n_mb)
+            stats = dict(agreement=hits / max(total, 1), bc_loss=tot["bc_loss"] / n_mb, value_loss=tot["value_loss"] / n_mb)
             if stats["agreement"] >= 0.9:
                 break
-        self.net.value_ko.requires_grad_(False)
-        self.vko_ready = True
         self.bc_buf = []
         return stats
 
@@ -293,14 +268,14 @@ class EGATAgent:
         j = out["route_logits"][0].argmax(-1).cpu().numpy()
         ko = ko_action_idx(obs, p["slots"], KoLocalCost())
         # route agreement only: channel labels are interchangeable, so exact-label match with Ko
-        # is not a meaningful imitation target (see _greedy_channels)
+        # is not a meaningful imitation target (see agents_io.sequential_channels)
         ok = j == ko % K_SLOTS
         return float(ok[p["alive"]].mean())
 
     # ---------- checkpoints ----------
     def save(self, path):
         torch.save(dict(cfg=vars(self.cfg), seed=self.seed, net=self.net.state_dict(), opt=self.opt.state_dict(),
-                        phase=self.phase, steps=self.steps, vko_ready=self.vko_ready,
+                        phase=self.phase, steps=self.steps,
                         fallback_rate=self.fallback_rate), path)
 
     @classmethod
@@ -309,8 +284,6 @@ class EGATAgent:
         ag = cls(seed=ck["seed"], device=device, **ck["cfg"])
         ag.net.load_state_dict(ck["net"])
         ag.opt.load_state_dict(ck["opt"])
-        ag.phase, ag.steps, ag.vko_ready = ck["phase"], ck["steps"], ck["vko_ready"]
+        ag.phase, ag.steps = ck["phase"], ck["steps"]
         ag.fallback_rate = ck["fallback_rate"]
-        if ag.vko_ready:
-            ag.net.value_ko.requires_grad_(False)
         return ag  # unfinished BC data is not saved: a BC-phase checkpoint resumes with an empty buffer

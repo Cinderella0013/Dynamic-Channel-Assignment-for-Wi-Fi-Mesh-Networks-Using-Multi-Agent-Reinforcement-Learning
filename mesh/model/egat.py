@@ -1,5 +1,5 @@
 """EGAT-MAPPO network: edge-aware GATv2 encoder + GRU + two-timescale heads + Ko residual prior
-+ centralized critic + frozen-after-BC Ko value head (spec section 2)."""
++ centralized critic (spec section 2)."""
 import math
 from dataclasses import dataclass
 
@@ -21,6 +21,7 @@ class EGATConfig:
     use_bc: bool = True
     use_ko_prior: bool = True
     use_fallback: bool = True
+    seq_decode: bool = True  # sequential conflict-aware greedy channels (shared with all learners)
     # network
     hidden: int = 64
     heads: int = 4
@@ -43,7 +44,6 @@ class EGATConfig:
     # reward mixing (spec section 3) and fallback
     lam_start: float = 0.5
     lam_end: float = 0.1
-    fallback_margin: float = 0.0
     fallback_entropy: float = 2.0
 
 
@@ -94,7 +94,6 @@ class EGATNet(nn.Module):
         self.beta_c = nn.Parameter(torch.tensor(beta0))
         self.beta_r = nn.Parameter(torch.tensor(beta0))
         self.critic = _mlp(2 * hid, 128, 1)
-        self.value_ko = _mlp(hid, 64, 1)
 
     def forward(self, x, e, adj, h_prev, ko_slot, ko_chan, slot_mask):
         z = torch.relu(self.inp(x))
@@ -111,5 +110,4 @@ class EGATNet(nn.Module):
         route = route.masked_fill(~slot_mask, -1e9)
         pooled = z.mean(dim=1, keepdim=True).expand_as(z)
         return dict(chan_logits=chan, route_logits=route,
-                    value=self.critic(torch.cat([z, pooled], -1))[..., 0],
-                    value_ko=self.value_ko(z)[..., 0], h=z)
+                    value=self.critic(torch.cat([z, pooled], -1))[..., 0], h=z)

@@ -50,3 +50,15 @@ def test_learns_constant_best_action():
 def test_reward_lam_anneals():
     ag = EGATAgent(seed=0, device="cpu")
     assert ag.reward_lam(0, 100) == 0.5 and abs(ag.reward_lam(100, 100) - 0.1) < 1e-9
+
+
+def test_off_step_excludes_channel_terms():
+    import torch
+    ag = EGATAgent(seed=0, use_bc=False, device="cpu")
+    out = dict(route_logits=torch.randn(2, 3, 4), chan_logits=torch.randn(2, 3, 6))
+    j, c = torch.zeros(2, 3, dtype=torch.long), torch.ones(2, 3, dtype=torch.long)
+    lp_on, ent_on = ag._logp_entropy(out, j, c, torch.ones(2))
+    lp_off, ent_off = ag._logp_entropy(out, j, c, torch.zeros(2))
+    lr = torch.log_softmax(out["route_logits"], -1)
+    assert torch.allclose(lp_off, lr[..., 0]) and torch.allclose(ent_off, -(lr.exp() * lr).sum(-1))
+    assert not torch.allclose(lp_on, lp_off)
