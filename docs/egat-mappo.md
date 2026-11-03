@@ -84,6 +84,13 @@ input (obs + ACK + backlog)
   - no two conflicting nodes move in the same step;
   - the node is not in its 3-step cooldown.
 - **Queue preservation.** Moves are executed with `queue_preserve=True`, i.e. CSA-style buffering.
+- **Scaling of the terms (changed after review).**
+  - Q, interference and co-channel load are z-scored per node, over the 6 channels or over the allowed parent slots.
+  - The move cost M is z-scored **globally**, over all nodes. A node with a large backlog therefore pays more to move than one with a tiny backlog. A per-node z-score would charge every node with any backlog the same fixed amount (spec addendum §4.3 departure).
+  - Refinement scores parent moves on the same scale as RAES, including M, so channel and parent moves follow one rule.
+- **Cooldown.** A node that moved cannot move again for the next 3 rounds.
+- **Exploration.** During training, nodes chosen for ε-exploration execute their RAES proposal without refinement. Otherwise refinement would filter out most exploratory moves (k_max ≈ 2 of 20).
+- **k_max.** Uses the number of alive nodes.
 - **Flags:** `raes`, `migration_control`, `queue_preserve`, `raes_order`, plus all encoder flags.
 - **Fairness setting (b).** Every method runs with `queue_preserve`. This separates the gain from planning and migration control from the gain from queue preservation alone.
 

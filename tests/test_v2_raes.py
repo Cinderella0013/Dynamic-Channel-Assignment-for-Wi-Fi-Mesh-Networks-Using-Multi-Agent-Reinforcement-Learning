@@ -64,3 +64,38 @@ def test_refinement_caps_moves_and_separates_conflicts():
     _, _, moved = refine(obs, slots, c, j, sc, np.zeros((20, K_SLOTS)), np.zeros(20, int))
     conf = edge_matrix(obs, "is_conflict") > 0
     assert 0 < moved.sum() <= 2 and not (conf & np.outer(moved, moved)).any()
+
+
+def test_refine_route_gain_does_not_depend_on_q_scale():
+    obs = _obs()
+    slots = neighbor_slots(obs)
+    rm = _mask(obs, slots)
+    cur = np.array([np.flatnonzero((slots[u] == obs.next_hop[u]) & (slots[u] >= 0)) for u in range(20)], dtype=object)
+    u = next(u for u in range(20) if rm[u].sum() >= 2 and len(cur[u]) and rm[u, cur[u][0]])
+    jc = cur[u][0]
+    jb = next(k for k in np.flatnonzero(rm[u]) if k != jc)
+    q_rt = np.zeros((20, K_SLOTS))
+    q_rt[u, rm[u]] = 50.0                            # allowed slots at 50; masked slots stay 0
+    q_rt[u, jb] = 51.0
+    c_cur = obs.channels[:, 1] - 1
+    j = np.array([cur[v][0] if len(cur[v]) else 0 for v in range(20)])
+    j[u] = jb
+    _, j2, moved = refine(obs, slots, c_cur, j, np.zeros((20, 6)), q_rt, np.zeros(20, int),
+                          k_frac=1.0, route_mask=rm, g=0.0)
+    assert moved[u] and j2[u] == jb
+
+
+def test_raes_move_cost_scales_with_backlog():
+    obs = _obs()
+    slots = neighbor_slots(obs)
+    rm = _mask(obs, slots)
+    cur = obs.channels[:, 1] - 1
+    q = np.zeros((20, 6))
+    alt = (cur + 1) % 6
+    q[np.arange(20), alt] = 1.0                      # everyone mildly prefers another channel
+    bl = obs.node_feat[:, -1]
+    bl[:] = 0.0
+    small, big = 0, 1
+    bl[small], bl[big] = 0.01, 40.0
+    c, _, _ = raes(obs, slots, q, np.zeros((20, K_SLOTS)), rm, a=0.0, b=0.0, g=1.0)
+    assert c[small] == alt[small] and c[big] == cur[big]

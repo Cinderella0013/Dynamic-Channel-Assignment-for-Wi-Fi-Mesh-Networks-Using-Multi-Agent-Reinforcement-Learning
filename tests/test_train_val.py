@@ -8,7 +8,8 @@ def test_keeps_best_validation_checkpoint(monkeypatch, tmp_path):
         agent._val_tag = v
         return v
     monkeypatch.setattr(T, "validate", fake_val)
-    ag = T.train("q_neutral", steps=300, seed=0, n=10, out=str(tmp_path / "q.pt"), log_every=10**9, val_every=100)
+    # validations at 200, 400, 600 (episode ends) and the final step: scores 5, 9, 1, 2 -> best is not the last
+    ag = T.train("q_neutral", steps=700, seed=0, n=10, out=str(tmp_path / "q.pt"), log_every=10**9, val_every=100)
     assert getattr(ag, "_val_tag", None) == 9.0
 
 

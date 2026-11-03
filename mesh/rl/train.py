@@ -53,7 +53,7 @@ def train(method, steps, seed=0, n=20, out=None, log_every=5000, val_every=None,
     def checkpoint(step):
         nonlocal best, best_v
         v = validate(agent, n)
-        if v > best_v:
+        if best is None or v > best_v:  # also guards a NaN validation score
             best, best_v = snapshot(agent), v
         print(f"{method} val step {step} reward {v:.1f} (best {best_v:.1f})", flush=True)
     env = obs = None

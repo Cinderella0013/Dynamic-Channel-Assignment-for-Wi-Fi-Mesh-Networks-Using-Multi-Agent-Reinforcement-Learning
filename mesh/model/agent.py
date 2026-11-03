@@ -243,7 +243,8 @@ class EGATAgent:
                     with torch.no_grad():
                         ref = self._bc_tensors(items, h_prev)
                     kl = self._kl(out["route_logits"], ref["route_logits"])                         + is_chan[:, None] * self._kl(out["chan_logits"], ref["chan_logits"])
-                    f = min(self.steps / max(self.total_steps, 1), 1.0)
+                    bc = cfg.bc_steps if cfg.use_bc else 0  # anneal from the end of BC
+                    f = min(max(self.steps - bc, 0) / max(self.total_steps - bc, 1), 1.0)
                     per = per + (cfg.kl_start + f * (cfg.kl_end - cfg.kl_start)) * kl
                 loss = (per * m).sum() / m.sum().clamp(min=1)
                 self.opt.zero_grad()

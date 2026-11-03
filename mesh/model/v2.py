@@ -21,6 +21,30 @@ def _z(x):
     return np.divide(x - x.mean(axis=-1, keepdims=True), sd, out=np.zeros_like(x), where=sd > 0)
 
 
+def _z_global(m, valid):
+    """z-score over all valid entries of a matrix: keeps the size of a cost across nodes, unlike a
+    per-row z-score, which would charge a node with 0.01 Mb backlog the same as one at Q_MAX."""
+    vals = m[valid]
+    sd = vals.std() if vals.size else 0.0
+    return np.where(valid, (m - vals.mean()) / sd, 0.0) if sd > 0 else np.zeros_like(m, dtype=float)
+
+
+def _z_rows(x, dom):
+    """Per-row z-score over the entries in dom; a row with < 2 entries in dom becomes 0."""
+    x = np.where(dom, x, np.nan)
+    with np.errstate(invalid="ignore"):
+        mu, sd = np.nanmean(x, axis=1, keepdims=True), np.nanstd(x, axis=1, keepdims=True)
+    z = np.where((sd > 0) & dom, (x - mu) / np.where(sd > 0, sd, 1.0), 0.0)
+    return np.nan_to_num(z)
+
+
+def _route_score(obs, slots, q_rt, dom, g, downtime, cur_slot):
+    """z(Q_rt) over the allowed slots minus g * (globally z-scored) cost of changing parent; -inf outside dom."""
+    backlog = obs.node_feat[:, NODE_FEATS.index("backlog")]
+    move = (np.arange(slots.shape[1])[None, :] != cur_slot[:, None]) * downtime * backlog[:, None]
+    return np.where(dom, _z_rows(q_rt, dom) - g * _z_global(move, dom), -np.inf)
+
+
 def _depth(next_hop):
     n = len(next_hop)
     depth = np.zeros(n, dtype=int)
@@ -53,6 +77,8 @@ def raes(obs, slots, q_ch, q_rt, route_mask, a=1.0, b=1.0, g=1.0, order="backlog
     else:  # "parents": tree order of the current routes
         depth = _depth(obs.next_hop)
         seq = sorted(range(n), key=lambda u: (depth[u], u))
+    move = (np.arange(N_DL_CH)[None, :] != cur[:, None]) * downtime * backlog[:, None]
+    z_move = _z_global(move, np.repeat(alive[:, None], N_DL_CH, axis=1))
     c = np.full(n, -1, dtype=int)
     score = np.zeros((n, N_DL_CH))
     for u in seq:
@@ -62,21 +88,16 @@ def raes(obs, slots, q_ch, q_rt, route_mask, a=1.0, b=1.0, g=1.0, order="backlog
             interf[c[v]] += 1.0 + backlog[v]
         cochan = np.zeros(N_DL_CH)
         np.add.at(cochan, cur[nb], load[nb])
-        move = (np.arange(N_DL_CH) != cur[u]) * downtime * backlog[u]
-        score[u] = _z(q_ch[u]) - a * _z(interf) - b * _z(cochan) - g * _z(move)
+        score[u] = _z(q_ch[u]) - a * _z(interf) - b * _z(cochan) - g * z_move[u]
         c[u] = int(np.argmax(score[u])) if alive[u] else cur[u]
 
     cur_slot = _current_slot(obs, slots, fallback=np.full(n, -1))
-    rt = np.where(route_mask, 0.0, -np.inf)
-    for u in range(n):
-        ok = route_mask[u]
-        move = (np.arange(slots.shape[1]) != cur_slot[u]) * downtime * backlog[u]
-        rt[u, ok] = _z(q_rt[u, ok]) - g * _z(move[ok]) if ok.sum() > 1 else 0.0
-    j = rt.argmax(axis=1)
+    j = _route_score(obs, slots, q_rt, route_mask, g, downtime, cur_slot).argmax(axis=1)
     return c, j, score
 
 
-def refine(obs, slots, c, j, ch_score, q_rt, cooldown_left, margin=0.1, k_frac=0.1):
+def refine(obs, slots, c, j, ch_score, q_rt, cooldown_left, margin=0.1, k_frac=0.1, route_mask=None, g=1.0,
+           downtime=1):
     """Migration refinement: keep a proposed move only if its gain beats the margin, the node is not
     cooling down, no conflicting neighbour moves this round, and at most ceil(k_frac * n_alive) move."""
     n = len(c)
@@ -84,9 +105,12 @@ def refine(obs, slots, c, j, ch_score, q_rt, cooldown_left, margin=0.1, k_frac=0
     conflict = (edge_matrix(obs, "is_conflict") > 0) & alive[:, None] & alive[None, :]
     c_cur = np.clip(obs.channels[:, 1] - 1, 0, N_DL_CH - 1)
     j_cur = _current_slot(obs, slots, fallback=j)
-    zr = _z(q_rt)
     idx = np.arange(n)
-    gain = (ch_score[idx, c] - ch_score[idx, c_cur]) + (zr[idx, j] - zr[idx, j_cur])
+    # route gain on the same scale RAES uses (allowed slots plus the current one), move cost included
+    dom = (slots >= 0) if route_mask is None else route_mask.copy()
+    dom[idx, j_cur] = True
+    rs = _route_score(obs, slots, q_rt, dom, g, downtime, j_cur)
+    gain = (ch_score[idx, c] - ch_score[idx, c_cur]) + (rs[idx, j] - rs[idx, j_cur])
     proposes = (c != c_cur) | (j != j_cur)
     cand = np.flatnonzero(proposes & alive & (gain > margin) & (np.asarray(cooldown_left) == 0))
     k_max = math.ceil(k_frac * alive.sum())
@@ -185,9 +209,14 @@ class EGATv2Agent(EGATAgent):
                 c, j, score = q_ch.argmax(1), np.where(mask, q_rt, -np.inf).argmax(1), _z(q_ch)
             self.cool = np.maximum(self.cool - 1, 0)
             if cfg.migration_control:
-                c, j, moved = refine(obs, p["slots"], c, j, score, np.where(mask, q_rt, 0.0), self.cool,
-                                     cfg.margin, cfg.k_frac)
-                self.cool[moved] = cfg.cooldown
+                c_prop, j_prop = c.copy(), j.copy()
+                c, j, moved = refine(obs, p["slots"], c, j, score, q_rt, self.cool, cfg.margin, cfg.k_frac,
+                                     route_mask=mask, g=cfg.g)
+                if explore:  # exploratory proposals are executed, otherwise refinement filters most of them
+                    c[noisy], j[noisy] = c_prop[noisy], j_prop[noisy]
+                    moved |= noisy
+                # +1: the counter is decremented before refine, so a move blocks the next `cooldown` rounds
+                self.cool[moved] = cfg.cooldown + 1
             a = c * K_SLOTS + j
         action = decode(obs, p["slots"], a)
         action.queue_preserve = cfg.queue_preserve
