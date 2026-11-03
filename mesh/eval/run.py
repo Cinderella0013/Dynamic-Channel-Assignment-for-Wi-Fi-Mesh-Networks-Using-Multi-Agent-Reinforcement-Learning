@@ -31,13 +31,22 @@ def run_episode(env, policy):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--scenario", required=True)
-    ap.add_argument("--policy", required=True, choices=POLICIES)
+    ap.add_argument("--policy", required=True, choices=list(POLICIES) + ["q_neutral", "yuan", "li"])
+    ap.add_argument("--checkpoint", help="trained model for q_neutral / yuan / li")
     ap.add_argument("--seeds", type=int, default=5)
     ap.add_argument("--n", type=int, default=20)
     ap.add_argument("--kind", default="rgg")
     a = ap.parse_args()
     cfg = make_scenario(a.scenario, n=a.n, kind=a.kind)
-    results = [run_episode(MeshEnv(cfg, s), POLICIES[a.policy]()) for s in range(a.seeds)]
+    if a.policy in POLICIES:
+        make = POLICIES[a.policy]
+    else:
+        from mesh.rl.train import LEARNERS  # torch only when a learner is evaluated
+        if not a.checkpoint:
+            ap.error(f"--checkpoint is required for --policy {a.policy}")
+        trained = LEARNERS[a.policy].load(a.checkpoint)
+        make = lambda: trained
+    results = [run_episode(MeshEnv(cfg, s), make()) for s in range(a.seeds)]
     keys = list(results[0])
     print("seed  " + "  ".join(f"{k:>16}" for k in keys))
     for s, r in enumerate(results):
