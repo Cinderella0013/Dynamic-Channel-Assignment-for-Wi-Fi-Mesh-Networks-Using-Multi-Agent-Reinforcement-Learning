@@ -15,9 +15,10 @@ LEARNERS = {"q_neutral": QNeutral, "yuan": YuanAgent, "li": LiAgent}
 SCENARIOS = ("S1", "S2", "S3", "S4", "S5", "S6")
 
 
-def train(method, steps, seed=0, n=20, out=None, log_every=5000):
+def train(method, steps, seed=0, n=20, out=None, log_every=5000, **agent_kwargs):
     rng = np.random.default_rng(seed)
-    agent = LEARNERS[method](seed=seed)
+    agent = LEARNERS[method](seed=seed, **agent_kwargs)
+    lam_of = getattr(agent, "reward_lam", None)
     env = obs = None
     ep_rewards, ep_r, t0 = [], 0.0, time.time()
     for step in range(1, steps + 1):
@@ -27,7 +28,8 @@ def train(method, steps, seed=0, n=20, out=None, log_every=5000):
         action = agent.act(obs, explore=True)
         a_idx = agent.last_action_idx
         next_obs, r, info = env.step(action)
-        agent.learn(obs, a_idx, per_agent_reward(obs, action, info, r, env.w), next_obs, info["done"])
+        lam = lam_of(step, steps) if lam_of else 0.5
+        agent.learn(obs, a_idx, per_agent_reward(obs, action, info, r, env.w, lam=lam), next_obs, info["done"])
         ep_r += r
         obs = next_obs
         if info["done"]:

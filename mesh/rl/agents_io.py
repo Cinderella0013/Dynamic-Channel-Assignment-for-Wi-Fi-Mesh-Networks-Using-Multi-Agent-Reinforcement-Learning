@@ -90,7 +90,7 @@ def agent_features(obs, slots):
     return o, m.reshape(n, F_M)
 
 
-def per_agent_reward(prev_obs, action, info, reward_global, w):
+def per_agent_reward(prev_obs, action, info, reward_global, w, lam=0.5):
     alive = alive_mask(prev_obs)
     # radio 1 is the node's own choice; a radio-0 change caused by the parent retuning
     # (same parent, parent's downlink changed) is charged to the parent, not the child
@@ -101,6 +101,6 @@ def per_agent_reward(prev_obs, action, info, reward_global, w):
     sw += r0 & ~follows
     np.add.at(sw, action.next_hop[follows], 1.0)
     rc = (action.next_hop != prev_obs.next_hop).astype(float)
-    r = (0.5 * info["local_utility"] + 0.5 * reward_global / max(alive.sum(), 1)
+    r = (lam * info["local_utility"] + (1 - lam) * reward_global / max(alive.sum(), 1)
          - w.gamma * sw - w.delta * rc)
     return np.where(alive, r, 0.0)

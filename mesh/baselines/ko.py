@@ -18,6 +18,25 @@ from mesh.sim.radio import N_CHANNELS, rate_mbps
 SWITCH_GAIN = 0.9
 
 
+def ko_route_via(obs, alive):
+    """Ko's Bellman-Ford toward gateways: via[u, v] = w(u, v) + dist(v), inf if unusable."""
+    n = len(alive)
+    link = (edge_matrix(obs, "is_link") > 0) & alive[:, None] & alive[None, :]
+    rate = np.where(link, rate_mbps(edge_matrix(obs, "snr_db")), 0.0)
+    usable = rate > 0
+    w = np.where(usable, (1 + edge_matrix(obs, "load_frac")) / np.where(usable, rate, 1.0), np.inf)
+    gw = [g for g in obs.gateways if alive[g]]
+    dist = np.full(n, np.inf)
+    dist[gw] = 0.0
+    for _ in range(n):
+        new = np.minimum(dist, (w + dist[None, :]).min(axis=1))
+        new[gw] = 0.0
+        if np.array_equal(new, dist):
+            break
+        dist = new
+    return w + dist[None, :]
+
+
 class KoLocalCost:
     def __init__(self, t_c=10):
         self.t_c = t_c
@@ -39,20 +58,9 @@ class KoLocalCost:
 
     def _route(self, obs, alive):
         n = len(alive)
-        link = (edge_matrix(obs, "is_link") > 0) & alive[:, None] & alive[None, :]
-        rate = np.where(link, rate_mbps(edge_matrix(obs, "snr_db")), 0.0)
-        usable = rate > 0
-        w = np.where(usable, (1 + edge_matrix(obs, "load_frac")) / np.where(usable, rate, 1.0), np.inf)
-        gw = [g for g in obs.gateways if alive[g]]
-        dist = np.full(n, np.inf)
-        dist[gw] = 0.0
-        for _ in range(n):
-            new = np.minimum(dist, (w + dist[None, :]).min(axis=1))
-            new[gw] = 0.0
-            if np.array_equal(new, dist):
-                break
-            dist = new
-        via = w + dist[None, :]
+        via = ko_route_via(obs, alive)
+        dist = via.min(axis=1)
+        dist[[g for g in obs.gateways if alive[g]]] = 0.0
         next_hop = np.argmin(via, axis=1)
         for u in range(n):
             cur = obs.next_hop[u]
