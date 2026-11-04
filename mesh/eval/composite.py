@@ -69,23 +69,28 @@ def _pick(r, idx):
 
 
 def significance(results, ours, ref, scenarios, n_boot=2000, alpha=0.05, seed=0):
-    """Paired runs (same eval seed, same training-seed file): Wilcoxon per scenario on per-run composites,
-    and a bootstrap CI of the mean composite (runs resampled within each scenario)."""
+    """Paired runs (same eval seed, same training-seed file), two per-scenario tests reported side by side:
+    - Wilcoxon signed-rank on per-run composites (tests their median; noisy when a reference varies a lot run to run);
+    - bootstrap of the pre-registered composite itself (computed on metric means, runs resampled with their pairs):
+      significant when the 95% interval lies above 0.
+    Also a bootstrap CI of the mean composite over the scenarios."""
     from scipy.stats import wilcoxon
     rng = np.random.default_rng(seed)
-    p, boot = {}, np.zeros(n_boot)
+    p, boot, lo = {}, np.zeros(n_boot), {}
     for s in scenarios:
         a, b = results[ours][s], results[ref][s]
         n = len(a["aggregate"])
         assert n == len(b["aggregate"]), f"{ours}/{ref} {s}: unpaired run counts {n} vs {len(b['aggregate'])}"
         per = [score({"o": {s: _pick(a, [i])}, "r": {s: _pick(b, [i])}}, "o", "r", s) for i in range(n)]
         p[s] = float(wilcoxon(per).pvalue) if np.any(per) else 1.0
-        for t in range(n_boot):
-            idx = rng.integers(n, size=n)
-            boot[t] += score({"o": {s: _pick(a, idx)}, "r": {s: _pick(b, idx)}}, "o", "r", s)
+        bs = np.array([score({"o": {s: _pick(a, idx)}, "r": {s: _pick(b, idx)}}, "o", "r", s)
+                       for idx in (rng.integers(n, size=n) for _ in range(n_boot))])
+        boot += bs
+        lo[s] = float(np.percentile(bs, 100 * alpha / 2))
     boot /= len(scenarios)
     sig = [s for s in scenarios if p[s] < alpha and score(results, ours, ref, s) > 0]
-    return {"p": p, "frac_sig": len(sig) / len(scenarios),
+    return {"p": p, "frac_sig": len(sig) / len(scenarios), "boot_lo": lo,
+            "frac_sig_boot": sum(lo[s] > 0 for s in scenarios) / len(scenarios),
             "ci": (float(np.percentile(boot, 2.5)), float(np.percentile(boot, 97.5)))}
 
 
@@ -109,16 +114,17 @@ def report(paths, ours="egat"):
         out.append(f"| {ref} | {_mean_score(results, ours, ref, ab):+.3f} | {cell_c} |")
 
     out += ["", "## Significance (A+B; paired Wilcoxon per scenario, bootstrap 95% CI of the mean)", "",
-            "| reference | mean | 95% CI | scenarios better with p<0.05 |", "|---|---|---|---|"]
+            "| reference | mean | 95% CI | scenarios better (Wilcoxon p<0.05) | scenarios better (bootstrap 95%) |",
+            "|---|---|---|---|---|"]
     sigs = {ref: significance(results, ours, ref, ab) for ref in refs}
     for ref, sg in sigs.items():
         out.append(f"| {ref} | {_mean_score(results, ours, ref, ab):+.3f} | [{sg['ci'][0]:+.3f}, {sg['ci'][1]:+.3f}] "
-                   f"| {sg['frac_sig']:.0%} |")
+                   f"| {sg['frac_sig']:.0%} | {sg['frac_sig_boot']:.0%} |")
 
     if "ko" in refs:
-        pk = significance(results, ours, "ko", scen, n_boot=1)["p"]
-        out += ["", "## Per scenario vs ko", "", "| scenario | composite | p (Wilcoxon) |", "|---|---|---|"]
-        out += [f"| {s} | {score(results, ours, 'ko', s):+.3f} | {pk[s]:.4f} |" for s in scen]
+        sk = significance(results, ours, "ko", scen)
+        out += ["", "## Per scenario vs ko", "", "| scenario | composite | p (Wilcoxon) | bootstrap 2.5% |", "|---|---|---|---|"]
+        out += [f"| {s} | {score(results, ours, 'ko', s):+.3f} | {sk['p'][s]:.4f} | {sk['boot_lo'][s]:+.3f} |" for s in scen]
 
     out += ["", "## Average rank over 5 metrics (1 = best, weight-free)", "", "| method | rank |", "|---|---|"]
     ranks = {m: [] for m in methods}

@@ -77,3 +77,15 @@ def test_no_effect_is_not_significant(tmp_path):
     res, _ = _load([str(p)])
     sig = significance(res, "egat", "ko", ["S2"])
     assert sig["frac_sig"] == 0.0 and sig["ci"][0] <= 0 <= sig["ci"][1]
+
+
+def test_bootstrap_significance_tracks_the_mean_composite(tmp_path):
+    from mesh.eval.composite import _load, significance
+    p = tmp_path / "t.json"
+    _seeds(p, 6, 0.2)
+    res, _ = _load([str(p)])
+    assert significance(res, "egat", "ko", ["S2"])["frac_sig_boot"] == 1.0
+    q = tmp_path / "u.json"
+    _seeds(q, 6, 0.0)
+    res, _ = _load([str(q)])
+    assert significance(res, "egat", "ko", ["S2"])["frac_sig_boot"] == 0.0
