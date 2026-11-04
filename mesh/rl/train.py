@@ -154,8 +154,10 @@ def main():
     ap.add_argument("--log-every", type=int, default=5000)
     ap.add_argument("--val-every", type=int, default=None)
     ap.add_argument("--teacher", choices=("ko", "oracle"), default="ko")
+    ap.add_argument("--agent-set", action="append", default=[], help="learner config key=value (JSON value), e.g. ablations")
     a = ap.parse_args()
-    train(a.method, a.steps, a.seed, a.n, a.out, a.log_every, a.val_every, teacher=a.teacher)
+    from mesh.eval.suite import _kv
+    train(a.method, a.steps, a.seed, a.n, a.out, a.log_every, a.val_every, teacher=a.teacher, **_kv(a.agent_set))
 
 
 if __name__ == "__main__":

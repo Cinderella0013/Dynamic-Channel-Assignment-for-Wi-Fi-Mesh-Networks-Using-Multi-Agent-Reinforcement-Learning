@@ -240,6 +240,8 @@ Reported: v1 with margin 1.0 (previous rule) and v1 with the margin chosen here.
 - **Test:** run once per method with its chosen margin. EGAT + hysteresis (margin 3) is compared against Li + hysteresis and Yuan + hysteresis.
 - **Q-neutral:** not included. It is tabular and far behind (about −0.73).
 
+**Component ablation, 2026-11-06 (seventh amendment).** On fresh seeds, EGAT + hysteresis leads Li + hysteresis by only about +4% to +6%. This ablation asks which EGAT component carries that lead. Four variants each switch off one flag: `use_edge_feat`, `use_gru`, `use_ko_prior` and `use_bc`. Each variant is trained with the same recipe as v8 EGAT (100k steps, the same checkpoint selection and EMA) on training seeds 0–2. All are evaluated with `switch_margin` = 3, fixed and not re-selected, on test seeds 0–19 in settings a and b. Each variant is compared against the full EGAT + hysteresis on seeds 0–2, using the seed-pair t-interval. A component counts as contributing when removing it lowers the composite vs Ko and vs Li + hysteresis.
+
 ---
 
 ## 6. Order of work
