@@ -14,6 +14,10 @@ elif a[0] in ("v1", "egat") and len(a) == 3:
     name = {"v1": "egat_v1", "egat": "egat"}[a[0]]
     pol = LEARNERS[name].load(f"runs/v8/ckpt/{name}_s{a[1]}.pt", device="cpu")
     pol.cfg.switch_margin = float(a[2])
+elif a[0] in ("li", "yuan") and len(a) == 3:  # fairness ablation: baseline with hysteresis
+    tag = f"{a[0]}h_s{a[1]}_m{a[2]}"
+    pol = LEARNERS[a[0]].load(f"runs/v8/ckpt/{a[0]}_s{a[1]}.pt", device="cpu")
+    pol.switch_margin = float(a[2])
 else:
     tag, pol = f"{a[0]}_s{a[1]}", LEARNERS[a[0]].load(f"runs/v8/ckpt/{a[0]}_s{a[1]}.pt")
 json.dump(_val_results(pol, 20), open(f"runs/v8/wc/{tag}.json", "w"))
