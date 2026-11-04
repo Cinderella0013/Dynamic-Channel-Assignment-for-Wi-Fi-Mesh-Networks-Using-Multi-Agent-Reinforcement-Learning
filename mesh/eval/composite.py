@@ -64,6 +64,16 @@ def _load(paths):
     return results, commits
 
 
+def holm(pvals, alpha=0.05):
+    """Holm step-down over a family {name: p}: reject while sorted p_(i) <= alpha / (m - i)."""
+    out, m = {k: False for k in pvals}, len(pvals)
+    for i, (k, v) in enumerate(sorted(pvals.items(), key=lambda kv: kv[1])):
+        if v > alpha / (m - i):
+            break
+        out[k] = True
+    return out
+
+
 def _pick(r, idx):
     return {k: [v[i] for i in idx] for k, v in r.items()}
 
@@ -71,12 +81,13 @@ def _pick(r, idx):
 def significance(results, ours, ref, scenarios, n_boot=2000, alpha=0.05, seed=0):
     """Paired runs (same eval seed, same training-seed file), two per-scenario tests reported side by side:
     - Wilcoxon signed-rank on per-run composites (tests their median; noisy when a reference varies a lot run to run);
-    - bootstrap of the pre-registered composite itself (computed on metric means, runs resampled with their pairs):
-      significant when the 95% interval lies above 0.
+    - bootstrap of the pre-registered composite itself (computed on metric means, runs resampled with their pairs),
+      two-sided bootstrap p.
+    Both are Holm-corrected across the scenarios (spec 5.3); a scenario counts when it is rejected and the composite > 0.
     Also a bootstrap CI of the mean composite over the scenarios."""
     from scipy.stats import wilcoxon
     rng = np.random.default_rng(seed)
-    p, boot, lo = {}, np.zeros(n_boot), {}
+    p, pb, boot, lo = {}, {}, np.zeros(n_boot), {}
     for s in scenarios:
         a, b = results[ours][s], results[ref][s]
         n = len(a["aggregate"])
@@ -87,10 +98,13 @@ def significance(results, ours, ref, scenarios, n_boot=2000, alpha=0.05, seed=0)
                        for idx in (rng.integers(n, size=n) for _ in range(n_boot))])
         boot += bs
         lo[s] = float(np.percentile(bs, 100 * alpha / 2))
+        pb[s] = min(1.0, 2 * min(np.mean(bs <= 0), np.mean(bs >= 0)))
     boot /= len(scenarios)
-    sig = [s for s in scenarios if p[s] < alpha and score(results, ours, ref, s) > 0]
-    return {"p": p, "frac_sig": len(sig) / len(scenarios), "boot_lo": lo,
-            "frac_sig_boot": sum(lo[s] > 0 for s in scenarios) / len(scenarios),
+    better = {s: score(results, ours, ref, s) > 0 for s in scenarios}
+    rw, rb = holm(p, alpha), holm(pb, alpha)
+    return {"p": p, "p_boot": pb, "boot_lo": lo,
+            "frac_sig": sum(rw[s] and better[s] for s in scenarios) / len(scenarios),
+            "frac_sig_boot": sum(rb[s] and better[s] for s in scenarios) / len(scenarios),
             "ci": (float(np.percentile(boot, 2.5)), float(np.percentile(boot, 97.5)))}
 
 
@@ -113,8 +127,8 @@ def report(paths, ours="egat"):
         cell_c = f"{_mean_score(results, ours, ref, c):+.3f}" if c else "-"
         out.append(f"| {ref} | {_mean_score(results, ours, ref, ab):+.3f} | {cell_c} |")
 
-    out += ["", "## Significance (A+B; paired Wilcoxon per scenario, bootstrap 95% CI of the mean)", "",
-            "| reference | mean | 95% CI | scenarios better (Wilcoxon p<0.05) | scenarios better (bootstrap 95%) |",
+    out += ["", "## Significance (A+B; per-scenario tests Holm-corrected at 0.05; bootstrap 95% CI of the mean)", "",
+            "| reference | mean | 95% CI | scenarios better (Wilcoxon, Holm) | scenarios better (bootstrap, Holm) |",
             "|---|---|---|---|---|"]
     sigs = {ref: significance(results, ours, ref, ab) for ref in refs}
     for ref, sg in sigs.items():
@@ -123,8 +137,10 @@ def report(paths, ours="egat"):
 
     if "ko" in refs:
         sk = significance(results, ours, "ko", scen)
-        out += ["", "## Per scenario vs ko", "", "| scenario | composite | p (Wilcoxon) | bootstrap 2.5% |", "|---|---|---|---|"]
-        out += [f"| {s} | {score(results, ours, 'ko', s):+.3f} | {sk['p'][s]:.4f} | {sk['boot_lo'][s]:+.3f} |" for s in scen]
+        out += ["", "## Per scenario vs ko", "", "| scenario | composite | p (Wilcoxon) | p (bootstrap) | bootstrap 2.5% |",
+                "|---|---|---|---|---|"]
+        out += [f"| {s} | {score(results, ours, 'ko', s):+.3f} | {sk['p'][s]:.4f} | {sk['p_boot'][s]:.4f} "
+                f"| {sk['boot_lo'][s]:+.3f} |" for s in scen]
 
     out += ["", "## Average rank over 5 metrics (1 = best, weight-free)", "", "| method | rank |", "|---|---|"]
     ranks = {m: [] for m in methods}

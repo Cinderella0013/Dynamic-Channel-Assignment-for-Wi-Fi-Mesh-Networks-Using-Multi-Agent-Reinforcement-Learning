@@ -89,3 +89,11 @@ def test_bootstrap_significance_tracks_the_mean_composite(tmp_path):
     _seeds(q, 6, 0.0)
     res, _ = _load([str(q)])
     assert significance(res, "egat", "ko", ["S2"])["frac_sig_boot"] == 0.0
+
+
+def test_holm_correction():
+    from mesh.eval.composite import holm
+    # m=3: thresholds .05/3, .05/2, .05/1 on sorted p; stops at the first failure
+    assert holm({"a": 0.01, "b": 0.02, "c": 0.04}) == {"a": True, "b": True, "c": True}
+    assert holm({"a": 0.01, "b": 0.03, "c": 0.04}) == {"a": True, "b": False, "c": False}
+    assert holm({"a": 0.02, "b": 0.001, "c": 0.5}) == {"a": True, "b": True, "c": False}

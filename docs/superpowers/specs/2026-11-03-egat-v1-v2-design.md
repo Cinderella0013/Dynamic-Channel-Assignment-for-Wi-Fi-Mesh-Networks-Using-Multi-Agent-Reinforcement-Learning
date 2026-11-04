@@ -186,6 +186,18 @@ Report all of these alongside each other:
 
 Statistics follow the original spec §5.7: training seeds, 20 test topologies, 3 traffic seeds, bootstrap CIs.
 
+**Amendment, 2026-11-05, made after the seed-0 and 3-seed results were seen.** Criterion 1's per-scenario test is reported twice, and both versions are Holm-corrected across the 11 A+B scenarios:
+- **(i) As pre-registered:** a paired Wilcoxon test on per-run composites.
+- **(ii) Added:** a paired bootstrap of the pre-registered composite itself. It is computed on metric means, with the runs resampled together with their pairs, and gives a two-sided bootstrap p-value.
+
+Reason: Wilcoxon tests the median of per-run composites, which is a different quantity from the mean-based composite that criterion 1 is defined on. Against a reference whose runs vary widely (Li's per-run composite against EGAT ranged from −0.46 to +0.72), the two disagree.
+
+Both results are reported. Any claim that rests only on (ii) is stated as such.
+
+Implementation note: Holm correction was missing from the first implementation (commit 087f27e). It was added at the same time as this amendment.
+
+Evaluation seeds: 20 env seeds per scenario (each seed draws both the topology and the traffic) × 3 training seeds. This replaces "20 test topologies × 3 traffic seeds".
+
 ---
 
 ## 6. Order of work
