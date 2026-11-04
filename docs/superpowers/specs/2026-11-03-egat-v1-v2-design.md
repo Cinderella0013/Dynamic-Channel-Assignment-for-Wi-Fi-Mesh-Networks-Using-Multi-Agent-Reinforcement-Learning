@@ -230,6 +230,8 @@ Reported side by side: v1 without and with hysteresis.
 
 Reported: v1 with margin 1.0 (previous rule) and v1 with the margin chosen here.
 
+**Amendment, 2026-11-06 (fourth), made after the v8 EGAT results were seen.** The Plan 4 EGAT was retrained under the new selection (5 seeds). It beat Ko by +0.168, but its lead over Li (+0.024) was not significant. EGAT shares the agent class with v1, so the same switch hysteresis, with the fallback fix, is applied to **egat** too. The margin is chosen by the same worst-case rule on validation (grid {0, 0.5, 1, 2, 3, 4}), fixed before the grid runs. Test evaluation is then run once. Reported: EGAT without and with hysteresis.
+
 ---
 
 ## 6. Order of work
