@@ -98,11 +98,17 @@ class EGATAgent:
             j = torch.multinomial(route.probs, 1, generator=self.gen)[:, 0]
             c = torch.multinomial(chan.probs, 1, generator=self.gen)[:, 0]
         else:
-            j = route.probs.argmax(-1)
+            rl, cl = route.logits, chan.logits
+            if self.cfg.switch_margin:  # hysteresis: switch only when the new choice wins by the margin
+                cur = torch.as_tensor((p["slots"] == obs.next_hop[:, None]) & (obs.next_hop[:, None] >= 0))
+                rl = rl + self.cfg.switch_margin * cur
+                cl = cl + self.cfg.switch_margin * torch.nn.functional.one_hot(
+                    torch.as_tensor(p["cur_chan"]), cl.shape[-1])
+            j = rl.argmax(-1)
             if self.cfg.seq_decode:
-                c = torch.as_tensor(sequential_channels(obs, p["slots"], chan.logits.numpy(), j.numpy()))
+                c = torch.as_tensor(sequential_channels(obs, p["slots"], cl.numpy(), j.numpy()))
             else:
-                c = chan.probs.argmax(-1)
+                c = cl.argmax(-1)
         if not p["is_chan_step"]:
             c = torch.as_tensor(p["cur_chan"])
         a = (c * K_SLOTS + j).numpy()

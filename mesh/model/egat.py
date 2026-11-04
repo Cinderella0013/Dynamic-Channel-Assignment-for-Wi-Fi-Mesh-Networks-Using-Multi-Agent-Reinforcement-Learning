@@ -45,6 +45,8 @@ class EGATConfig:
     lam_start: float = 0.5
     lam_end: float = 0.1
     fallback_entropy: float = 2.0
+    # greedy decoding only: logit bonus for keeping the current channel / parent (switch hysteresis, 0 = off)
+    switch_margin: float = 0.0
     # v1 (spec addendum 3): anchor PPO to the BC policy, n-step channel credit, lower lr after BC
     use_kl_anchor: bool = False
     kl_start: float = 0.1

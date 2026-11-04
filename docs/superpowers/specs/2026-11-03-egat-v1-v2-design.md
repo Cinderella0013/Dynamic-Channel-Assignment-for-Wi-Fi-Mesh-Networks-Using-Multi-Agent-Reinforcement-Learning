@@ -215,6 +215,15 @@ Changes, applied to **every learner** (q_neutral, yuan, li, egat, egat_v1, egat_
 
 Reported side by side: the earlier 5-seed results (old selection) and the new ones.
 
+**Amendment, 2026-11-06 (second), made after the 5-training-seed v8 results were seen.** Under the new selection, v1 beats Ko (+0.109) but loses to Li (−0.054) on A+B setting (a). It wins 4 of 5 metrics against Li and loses stability: 308 vs 122 switches per episode, a delta clipped at −1. Part of this comes from cascades: radio 0 follows the parent's channel.
+
+Change, for **egat_v1 only**, at greedy decoding only (training and exploration are unchanged):
+- **Switch hysteresis.** A logit bonus `switch_margin` is added to each node's current channel and its current parent. A node switches only when the new choice wins by more than the margin. The decision stays local to each node.
+- **Choosing the margin.** The grid is {0, 0.5, 1, 2, 4}. The margin is the one with the best mean validation composite vs Ko over the 5 training seeds, using the same validation set as above (A+B × seeds 1000–1003). It is fixed before any test evaluation, and test evaluation is then run once.
+- **Fairness.** The baselines keep their own published decoding. Hysteresis is part of the proposed method and is disclosed as a post-hoc addition. An ablation that gives Li and Yuan the same hysteresis is not run yet; it is open if a reviewer asks for it.
+
+Reported side by side: v1 without and with hysteresis.
+
 ---
 
 ## 6. Order of work
