@@ -56,7 +56,7 @@ def test_validation_during_bc_never_sees_the_oracle(monkeypatch):
         kinds.append(type(agent.ko).__name__)
         return real(agent, n)
     monkeypatch.setattr(T, "validate", spy)
-    monkeypatch.setattr(T, "SCENARIOS", ("S1",))
+    monkeypatch.setattr(T, "VAL_SCENARIOS", ("S1",))
     monkeypatch.setattr(T, "VAL_SEEDS", (1000,))
     train("egat_v1", steps=420, teacher="oracle", bc_steps=400, bc_epochs=1, val_every=200)
     assert kinds and set(kinds) == {"KoLocalCost"}

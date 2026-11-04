@@ -4,6 +4,7 @@ import copy
 import time
 
 import numpy as np
+import torch
 
 from mesh.baselines.ko import KoLocalCost
 from mesh.baselines.oracle import LookaheadOracle
@@ -14,11 +15,14 @@ from mesh.rl.li_gat_a2c import LiAgent
 from mesh.rl.q_neutral import QNeutral
 from mesh.rl.yuan_gqn import YuanAgent
 from mesh.sim.env import MeshEnv
-from mesh.sim.scenarios import make_scenario
+from mesh.eval.composite import _mean_score
+from mesh.sim.scenarios import SUITE_A, SUITE_B, make_scenario
 
 LEARNERS = {"q_neutral": QNeutral, "yuan": YuanAgent, "li": LiAgent, "egat": EGATAgent, "egat_v1": EGATv1Agent, "egat_v2": EGATv2Agent}
 SCENARIOS = ("S1", "S2", "S3", "S4", "S5", "S6")
-VAL_SEEDS = (1000, 1001, 1002)  # validation topologies; test seeds are 0-4
+VAL_SCENARIOS = SUITE_A + SUITE_B  # selection sees every scenario the pre-registered composite is reported on
+VAL_SEEDS = (1000, 1001, 1002, 1003)  # validation topologies; evaluation seeds are 0-19
+EMA_DECAY = 0.9995  # per env step after BC (~2000-step window); candidates carry these averaged weights
 
 
 _BUFFERS = ("buf", "bc_buf", "mem", "replay")
@@ -36,11 +40,38 @@ def snapshot(agent):
             setattr(agent, k, v)
 
 
-def validate(agent, n):
-    """Mean greedy reward on the validation set (evaluation only: no learning, no budget)."""
+_KO_VAL = {}
+
+
+def _val_results(policy, n):
     from mesh.eval.run import run_episode
-    return float(np.mean([run_episode(MeshEnv(make_scenario(s, n=n), vs), agent)["reward"]
-                          for s in SCENARIOS for vs in VAL_SEEDS]))
+    out = {}
+    for s in VAL_SCENARIOS:
+        rows = [run_episode(MeshEnv(make_scenario(s, n=n), vs), policy) for vs in VAL_SEEDS]
+        out[s] = {k: [r[k] for r in rows] for k in rows[0]}
+    return out
+
+
+def validate(agent, n):
+    """Pre-registered composite vs Ko, mean over VAL_SCENARIOS on held-out topologies (no learning, no budget):
+    checkpoints are selected on the metric the evaluation reports, not on raw env reward."""
+    key = (VAL_SCENARIOS, VAL_SEEDS, n)
+    if key not in _KO_VAL:
+        _KO_VAL[key] = _val_results(KoLocalCost(), n)
+    return _mean_score({"ours": _val_results(agent, n), "ko": _KO_VAL[key]}, "ours", "ko", list(VAL_SCENARIOS))
+
+
+def _ema_update(ema, net):
+    sd = net.state_dict()
+    if ema is None:
+        return {k: v.detach().clone() for k, v in sd.items()}
+    with torch.no_grad():
+        for k, v in sd.items():
+            if v.is_floating_point():
+                ema[k].lerp_(v, 1.0 - EMA_DECAY)
+            else:
+                ema[k].copy_(v)
+    return ema
 
 
 def train(method, steps, seed=0, n=20, out=None, log_every=5000, val_every=None, teacher="ko", **agent_kwargs):
@@ -55,12 +86,19 @@ def train(method, steps, seed=0, n=20, out=None, log_every=5000, val_every=None,
     best, best_v = None, -np.inf
     due, last_phase = False, getattr(agent, "phase", None)
 
+    ema = None
+
     def checkpoint(step):
         nonlocal best, best_v
-        v = validate(agent, n)
+        cand = snapshot(agent)
+        if ema is not None:
+            cand.net.load_state_dict(ema)
+        v = validate(cand, n)
         if best is None or v > best_v:  # also guards a NaN validation score
-            best, best_v = snapshot(agent), v
-        print(f"{method} val step {step} reward {v:.1f} (best {best_v:.1f})", flush=True)
+            best, best_v = cand, v
+        if out:
+            cand.save(out[:-3] + f"_val{step}.pt" if out.endswith(".pt") else f"{out}_val{step}")
+        print(f"{method} val step {step} composite {v:+.4f} (best {best_v:+.4f}) ema {ema is not None}", flush=True)
     env = obs = None
     ep_rewards, ep_r, t0 = [], 0.0, time.time()
     for step in range(1, steps + 1):
@@ -78,6 +116,8 @@ def train(method, steps, seed=0, n=20, out=None, log_every=5000, val_every=None,
         if teacher == "oracle" and (agent.phase != "bc" or info["done"]) and not isinstance(agent.ko, KoLocalCost):
             # after BC, and between episodes (validation), the prior/fallback must be Ko: the oracle cannot run at test time
             agent.ko = KoLocalCost()
+        if val_every and hasattr(agent, "net") and getattr(agent, "phase", None) != "bc":
+            ema = _ema_update(ema, agent.net)  # starts at the post-BC weights
         ep_r += r
         obs = next_obs
         if val_every:

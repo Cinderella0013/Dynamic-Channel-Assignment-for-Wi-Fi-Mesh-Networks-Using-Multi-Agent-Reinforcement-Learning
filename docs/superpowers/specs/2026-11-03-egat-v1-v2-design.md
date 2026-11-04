@@ -198,6 +198,23 @@ Implementation note: Holm correction was missing from the first implementation (
 
 Evaluation seeds: 20 env seeds per scenario (each seed draws both the topology and the traffic) × 3 training seeds. This replaces "20 test topologies × 3 traffic seeds".
 
+**Amendment, 2026-11-06, made after the 5-training-seed results were seen.**
+
+Training seeds rose to 5. The headline CI is now hierarchical: training-seed files are resampled first, then runs within each file. Results from the 5 seeds:
+- EGAT: per-seed composite vs Ko ranged from −0.043 to +0.179.
+- v1: hierarchical CI vs Ko was [+0.078, +0.116].
+
+Diagnosis: the chosen checkpoint's validation reward did not rank seeds by their test composite. Two causes:
+- The validation set was small (S1–S6 × 3 topologies), and a validation pass moved by about ±100 reward.
+- Selection used raw env reward, while evaluation uses the composite.
+
+Changes, applied to **every learner** (q_neutral, yuan, li, egat, egat_v1, egat_v2), with all of them retrained under these rules:
+- **Selection metric:** the pre-registered composite vs Ko, averaged over the A+B scenarios. It is computed on validation topologies, env seeds 1000–1003, which are disjoint from the evaluation seeds 0–19. This replaces mean env reward on S1–S6 × seeds 1000–1002.
+- **Weight averaging:** after BC, the validated candidate carries an EMA of the network weights (decay 0.9995 per env step) instead of the raw weights. Q-neutral is tabular and keeps raw values.
+- **Candidates saved:** every validated candidate is saved next to the chosen checkpoint (`<out>_val<step>.pt`). The selection rule above is fixed. Saved candidates are for diagnosis only, not for re-selection.
+
+Reported side by side: the earlier 5-seed results (old selection) and the new ones.
+
 ---
 
 ## 6. Order of work
