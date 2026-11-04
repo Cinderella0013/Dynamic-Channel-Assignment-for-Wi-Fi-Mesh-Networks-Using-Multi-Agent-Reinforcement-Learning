@@ -52,9 +52,10 @@ def _factory(spec, agent_overrides=None):
         raise ValueError(f"unknown learner label {name!r}")
     trained = LEARNERS[base].load(path)
     for k, v in (agent_overrides or {}).items():
-        if not hasattr(trained.cfg, k):
+        target = trained.cfg if hasattr(getattr(trained, "cfg", None), k) else trained  # EGAT config or agent attribute
+        if not hasattr(target, k):
             raise ValueError(f"unknown learner config field {k!r}")
-        setattr(trained.cfg, k, v)
+        setattr(target, k, v)
     return name, lambda: trained
 
 
