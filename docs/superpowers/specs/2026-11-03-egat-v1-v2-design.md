@@ -226,13 +226,19 @@ Reported side by side: v1 without and with hysteresis.
 
 **Amendment, 2026-11-06 (third), made after the hysteresis test results were seen.** v1 with margin 1.0 beat Ko by +0.193 and Li by +0.113 on test (setting a). The hierarchical CI vs Li, though, contained 0, and v1 lost to Li on two training seeds, through stability alone. Two changes follow:
 - **Fallback fix.** The Ko fallback's entropy check now uses the margin-biased distribution. Before the fix, about 1% of node decisions fell back to Ko's action and caused a switch even when the node was holding its choice.
-- **Selection rule changed from "composite vs Ko" to worst case over baselines.** The grid is {0, 0.5, 1, 2, 3, 4}. For each margin, the validation composite of v1 is computed against each baseline (Ko, Li, Yuan, M0, Q-neutral) on A+B � seeds 1000�1003, averaged over all v1 � baseline training-seed pairs. The margin chosen is the one whose lowest such average is highest. This matches success criterion 1, beat every baseline. It is fixed here before the grid runs, and test evaluation is then run once with the chosen margin.
+- **Selection rule changed from "composite vs Ko" to worst case over baselines.** The grid is {0, 0.5, 1, 2, 3, 4}. For each margin, the validation composite of v1 is computed against each baseline (Ko, Li, Yuan, M0, Q-neutral) on A+B × seeds 1000–1003, averaged over all v1 × baseline training-seed pairs. The margin chosen is the one whose lowest such average is highest. This matches success criterion 1, beat every baseline. It is fixed here before the grid runs, and test evaluation is then run once with the chosen margin.
 
 Reported: v1 with margin 1.0 (previous rule) and v1 with the margin chosen here.
 
 **Amendment, 2026-11-06 (fourth), made after the v8 EGAT results were seen.** The Plan 4 EGAT was retrained under the new selection (5 seeds). It beat Ko by +0.168, but its lead over Li (+0.024) was not significant. EGAT shares the agent class with v1, so the same switch hysteresis, with the fallback fix, is applied to **egat** too. The margin is chosen by the same worst-case rule on validation (grid {0, 0.5, 1, 2, 3, 4}), fixed before the grid runs. Test evaluation is then run once. Reported: EGAT without and with hysteresis.
 
 **Known limitation, recorded 2026-11-06 (fifth).** In setting (b), B4, EGAT with hysteresis loses to Ko by 8.4% (criterion 3 fails there). The whole loss is in `loss_rate`. Ko switches for free with queue preservation, and our method overflows queues on the unseen grid topology. EGAT without hysteresis also loses there. A congestion-aware margin was tried on validation and rejected by the worst-case rule, and validation does not show the B4 failure. No further tuning is done; it is reported as a limitation.
+
+**Fairness ablation, 2026-11-06 (sixth amendment).** The question it answers: does the win come from EGAT or from hysteresis alone? Li and Yuan get the same greedy-decoding hysteresis (`hold_bonus` in `mesh/rl/agents_io.py`): a bonus of +margin on joint actions that keep the node's current radio-1 channel, and +margin on those that keep its parent. Training is unchanged; existing v8 checkpoints are used.
+- **Margin grid:** {0, 0.25, 0.5, 1, 2, 4, 8, 16}, the same for every method. Score scales differ: the median top-1 vs top-2 gap is about 10 for Li's logits and about 0.9 for Yuan's Q-values. A wide log grid covers both.
+- **Selection:** the same worst-case rule on validation (A+B × seeds 1000–1003, all training-seed pairs). The references are the other original baselines (Ko, M0, Q-neutral, and the unmodified Li or Yuan). Our models are not references, so no baseline is tuned against EGAT.
+- **Test:** run once per method with its chosen margin. EGAT + hysteresis (margin 3) is compared against Li + hysteresis and Yuan + hysteresis.
+- **Q-neutral:** not included. It is tabular and far behind (about −0.73).
 
 ---
 
