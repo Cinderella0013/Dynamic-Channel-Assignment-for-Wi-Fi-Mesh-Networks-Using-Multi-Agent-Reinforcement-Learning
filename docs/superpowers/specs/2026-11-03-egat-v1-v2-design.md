@@ -224,6 +224,12 @@ Change, for **egat_v1 only**, at greedy decoding only (training and exploration 
 
 Reported side by side: v1 without and with hysteresis.
 
+**Amendment, 2026-11-06 (third), made after the hysteresis test results were seen.** v1 with margin 1.0 beat Ko by +0.193 and Li by +0.113 on test (setting a). The hierarchical CI vs Li, though, contained 0, and v1 lost to Li on two training seeds, through stability alone. Two changes follow:
+- **Fallback fix.** The Ko fallback's entropy check now uses the margin-biased distribution. Before the fix, about 1% of node decisions fell back to Ko's action and caused a switch even when the node was holding its choice.
+- **Selection rule changed from "composite vs Ko" to worst case over baselines.** The grid is {0, 0.5, 1, 2, 3, 4}. For each margin, the validation composite of v1 is computed against each baseline (Ko, Li, Yuan, M0, Q-neutral) on A+B × seeds 1000–1003, averaged over all v1 × baseline training-seed pairs. The margin chosen is the one whose lowest such average is highest. This matches success criterion 1, beat every baseline. It is fixed here before the grid runs, and test evaluation is then run once with the chosen margin.
+
+Reported: v1 with margin 1.0 (previous rule) and v1 with the margin chosen here.
+
 ---
 
 ## 6. Order of work

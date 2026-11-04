@@ -43,3 +43,18 @@ def test_suite_cli_sets_agent_config(tmp_path):
     from mesh.eval.suite import _factory
     _, make = _factory(f"egat_v1_h={ck}", {"switch_margin": 2.5})
     assert make().cfg.switch_margin == 2.5
+
+
+def test_fallback_judges_the_margin_biased_choice():
+    from mesh.sim.env import MeshEnv as Env
+    rates = {}
+    for m in (0.0, 100.0):
+        a = EGATv1Agent(seed=0, device="cpu", switch_margin=m, fallback_entropy=0.5)
+        a.phase = "ppo"
+        env = Env(make_scenario("S2"), 3)
+        obs, r = env.reset(), []
+        for _ in range(30):
+            obs, _, _ = env.step(a.act(obs))
+            r.append(a.fallback_rate)
+        rates[m] = sum(r[1:]) / len(r[1:])
+    assert rates[0.0] > 0.1 and rates[100.0] == 0.0   # a held choice is a sure choice: no Ko fallback switch

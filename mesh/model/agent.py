@@ -104,6 +104,8 @@ class EGATAgent:
                 rl = rl + self.cfg.switch_margin * cur
                 cl = cl + self.cfg.switch_margin * torch.nn.functional.one_hot(
                     torch.as_tensor(p["cur_chan"]), cl.shape[-1])
+                # the Ko fallback judges the biased choice: a held channel/parent is not an unsure one
+                route, chan = torch.distributions.Categorical(logits=rl), torch.distributions.Categorical(logits=cl)
             j = rl.argmax(-1)
             if self.cfg.seq_decode:
                 c = torch.as_tensor(sequential_channels(obs, p["slots"], cl.numpy(), j.numpy()))
