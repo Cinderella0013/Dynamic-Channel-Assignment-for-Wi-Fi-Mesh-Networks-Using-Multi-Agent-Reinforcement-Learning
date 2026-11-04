@@ -75,6 +75,10 @@ class EGATAgent:
         self.total_steps = steps
 
     # ---------- acting ----------
+    def margin_for(self, obs):
+        """Switch hysteresis margin at greedy decoding: the configured scalar (per-node in subclasses/probes)."""
+        return self.cfg.switch_margin
+
     def act(self, obs, explore=False):
         n = len(obs.node_feat)
         if obs.t == 0 or self.h is None or self.h.shape[0] != n:
@@ -99,10 +103,11 @@ class EGATAgent:
             c = torch.multinomial(chan.probs, 1, generator=self.gen)[:, 0]
         else:
             rl, cl = route.logits, chan.logits
-            if self.cfg.switch_margin:  # hysteresis: switch only when the new choice wins by the margin
+            m = torch.as_tensor(self.margin_for(obs), dtype=torch.float32).reshape(-1, 1)  # scalar or per node
+            if m.any():  # hysteresis: switch only when the new choice wins by the margin
                 cur = torch.as_tensor((p["slots"] == obs.next_hop[:, None]) & (obs.next_hop[:, None] >= 0))
-                rl = rl + self.cfg.switch_margin * cur
-                cl = cl + self.cfg.switch_margin * torch.nn.functional.one_hot(
+                rl = rl + m * cur
+                cl = cl + m * torch.nn.functional.one_hot(
                     torch.as_tensor(p["cur_chan"]), cl.shape[-1])
                 # the Ko fallback judges the biased choice: a held channel/parent is not an unsure one
                 route, chan = torch.distributions.Categorical(logits=rl), torch.distributions.Categorical(logits=cl)
