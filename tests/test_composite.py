@@ -97,3 +97,16 @@ def test_holm_correction():
     assert holm({"a": 0.01, "b": 0.02, "c": 0.04}) == {"a": True, "b": True, "c": True}
     assert holm({"a": 0.01, "b": 0.03, "c": 0.04}) == {"a": True, "b": False, "c": False}
     assert holm({"a": 0.02, "b": 0.001, "c": 0.5}) == {"a": True, "b": True, "c": False}
+
+
+def test_hierarchical_ci_counts_training_seed_spread(tmp_path):
+    from mesh.eval.composite import _load, significance
+    paths = []
+    for i, gain in enumerate((0.0, 0.0, 0.3)):  # one good training seed out of three
+        paths.append(str(tmp_path / f"t{i}.json"))
+        _seeds(paths[-1], 20, gain)
+    res, _ = _load(paths)
+    sig = significance(res, "egat", "ko", ["S2"])
+    assert sig["ci"][0] > 0.01                       # run-level CI: looks significant
+    assert sig["ci_h"][0] <= 0.005 < sig["ci"][0]    # training seeds resampled: can be no gain at all
+    assert "training seeds resampled" in report(paths, ours="egat")

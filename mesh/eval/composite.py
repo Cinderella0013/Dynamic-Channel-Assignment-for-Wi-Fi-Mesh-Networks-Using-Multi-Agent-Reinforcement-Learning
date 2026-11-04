@@ -9,6 +9,7 @@ from mesh.sim.scenarios import SUITE_A, SUITE_B, SUITE_C
 WEIGHTS = {"aggregate": 0.25, "jain": 0.20, "p5": 0.20, "loss_rate": 0.20, "stability": 0.15}
 LOWER_BETTER = {"loss_rate", "stability"}
 COUNT_METRICS = {"stability"}  # counts that can be 0: smoothed with +1
+FILE = "_file"  # per-run tag added by _load: index of the file (= training seed) the run came from
 
 
 def delta(ours, ref, lower_better, count=True):
@@ -53,7 +54,7 @@ def _ranks(values, lower_better):
 
 def _load(paths):
     results, commits = {}, set()
-    for p in [paths] if isinstance(paths, str) else paths:
+    for f, p in enumerate([paths] if isinstance(paths, str) else paths):
         d = json.load(open(p))
         commits.add(d["commit"])
         for method, by_s in d["results"].items():
@@ -61,6 +62,7 @@ def _load(paths):
                 cur = results.setdefault(method, {}).setdefault(scen, {})
                 for k, v in r.items():
                     cur[k] = cur.get(k, []) + list(v)
+                cur[FILE] = cur.get(FILE, []) + [f] * len(r["aggregate"])  # which training-seed file each run is from
     return results, commits
 
 
@@ -84,10 +86,14 @@ def significance(results, ours, ref, scenarios, n_boot=2000, alpha=0.05, seed=0)
     - bootstrap of the pre-registered composite itself (computed on metric means, runs resampled with their pairs),
       two-sided bootstrap p.
     Both are Holm-corrected across the scenarios (spec 5.3); a scenario counts when it is rejected and the composite > 0.
-    Also a bootstrap CI of the mean composite over the scenarios."""
+    Also bootstrap CIs of the mean composite over the scenarios: "ci" resamples runs only; "ci_h" is hierarchical,
+    resampling training-seed files of `ours` first (shared across scenarios), then runs within each drawn file."""
     from scipy.stats import wilcoxon
     rng = np.random.default_rng(seed)
     p, pb, boot, lo = {}, {}, np.zeros(n_boot), {}
+    files = sorted(set(results[ours][scenarios[0]].get(FILE, [0])))
+    draws = [rng.choice(files, size=len(files)) for _ in range(n_boot)]
+    boot_h = np.zeros(n_boot)
     for s in scenarios:
         a, b = results[ours][s], results[ref][s]
         n = len(a["aggregate"])
@@ -97,15 +103,22 @@ def significance(results, ours, ref, scenarios, n_boot=2000, alpha=0.05, seed=0)
         bs = np.array([score({"o": {s: _pick(a, idx)}, "r": {s: _pick(b, idx)}}, "o", "r", s)
                        for idx in (rng.integers(n, size=n) for _ in range(n_boot))])
         boot += bs
+        tag = np.array(a.get(FILE, [0] * n))
+        pos = {f: np.flatnonzero(tag == f) for f in files}
+        for j, fs in enumerate(draws):
+            idx = np.concatenate([rng.choice(pos[f], size=len(pos[f])) for f in fs])
+            boot_h[j] += score({"o": {s: _pick(a, idx)}, "r": {s: _pick(b, idx)}}, "o", "r", s)
         lo[s] = float(np.percentile(bs, 100 * alpha / 2))
         pb[s] = min(1.0, 2 * min(np.mean(bs <= 0), np.mean(bs >= 0)))
     boot /= len(scenarios)
+    boot_h /= len(scenarios)
     better = {s: score(results, ours, ref, s) > 0 for s in scenarios}
     rw, rb = holm(p, alpha), holm(pb, alpha)
     return {"p": p, "p_boot": pb, "boot_lo": lo,
             "frac_sig": sum(rw[s] and better[s] for s in scenarios) / len(scenarios),
             "frac_sig_boot": sum(rb[s] and better[s] for s in scenarios) / len(scenarios),
-            "ci": (float(np.percentile(boot, 2.5)), float(np.percentile(boot, 97.5)))}
+            "ci": (float(np.percentile(boot, 2.5)), float(np.percentile(boot, 97.5))),
+            "ci_h": (float(np.percentile(boot_h, 2.5)), float(np.percentile(boot_h, 97.5)))}
 
 
 def _mean_score(results, ours, ref, scenarios, weights=WEIGHTS):
@@ -128,11 +141,13 @@ def report(paths, ours="egat"):
         out.append(f"| {ref} | {_mean_score(results, ours, ref, ab):+.3f} | {cell_c} |")
 
     out += ["", "## Significance (A+B; per-scenario tests Holm-corrected at 0.05; bootstrap 95% CI of the mean)", "",
-            "| reference | mean | 95% CI | scenarios better (Wilcoxon, Holm) | scenarios better (bootstrap, Holm) |",
-            "|---|---|---|---|---|"]
+            "| reference | mean | 95% CI | 95% CI (training seeds resampled) | scenarios better (Wilcoxon, Holm) "
+            "| scenarios better (bootstrap, Holm) |",
+            "|---|---|---|---|---|---|"]
     sigs = {ref: significance(results, ours, ref, ab) for ref in refs}
     for ref, sg in sigs.items():
         out.append(f"| {ref} | {_mean_score(results, ours, ref, ab):+.3f} | [{sg['ci'][0]:+.3f}, {sg['ci'][1]:+.3f}] "
+                   f"| [{sg['ci_h'][0]:+.3f}, {sg['ci_h'][1]:+.3f}] "
                    f"| {sg['frac_sig']:.0%} | {sg['frac_sig_boot']:.0%} |")
 
     if "ko" in refs:
