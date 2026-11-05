@@ -122,9 +122,9 @@ class Builder:
         p.getparent().remove(p)
         return [p]
 
-    def tbl(self, rows, widths):
-        assert sum(widths) == 9026, widths
-        x = [f'<w:tbl xmlns:w="{W}"><w:tblPr><w:tblW w:w="9026" w:type="dxa"/><w:jc w:val="center"/><w:tblBorders>']
+    def tbl(self, rows, widths, check=True):
+        assert not check or sum(widths) == 9026, widths
+        x = [f'<w:tbl xmlns:w="{W}"><w:tblPr><w:tblW w:w="{sum(widths)}" w:type="dxa"/><w:jc w:val="center"/><w:tblBorders>']
         x += [f'<w:{b} w:val="single" w:sz="4" w:space="0" w:color="BFBFBF"/>'
               for b in ("top", "left", "bottom", "right", "insideH", "insideV")]
         x.append('</w:tblBorders><w:tblLayout w:type="fixed"/><w:tblLook w:val="04A0" w:firstRow="1" w:lastRow="0" '
