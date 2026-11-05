@@ -36,6 +36,84 @@ def _script_runs(s):
     return [(seg, bool(c)) for seg, c in out] or [("", False)]
 
 
+SYM_FONT, BASE_SZ = "Calibri Light", 28  # both documents default to 14-pt TH Sarabun New
+
+
+def _is_sym(ch):
+    """Characters TH Sarabun New lacks (Greek, math operators, arrows, super/subscripts): Word falls back to a
+    font whose glyphs look much larger than Sarabun's, so they get their own smaller run."""
+    o = ord(ch)
+    return (0x370 <= o <= 0x3FF or 0x2190 <= o <= 0x22FF or 0x2070 <= o <= 0x209F or 0x1D00 <= o <= 0x1DBF
+            or ch in "√")
+
+
+def fix_symbols(elements):
+    """Split runs so symbol characters sit in Cambria Math runs at ~78% of the surrounding size. Idempotent."""
+    for root in elements:
+        for r in list(root.iter(qn("w:r"))):
+            t = r.find(qn("w:t"))
+            if t is None or not t.text or not any(_is_sym(c) for c in t.text):
+                continue
+            rpr = r.find(qn("w:rPr"))
+            f = rpr.find(qn("w:rFonts")) if rpr is not None else None
+            if f is not None and f.get(qn("w:ascii")) == SYM_FONT:
+                continue
+            segs = []
+            for ch in t.text:
+                s = _is_sym(ch)
+                if segs and segs[-1][1] == s:
+                    segs[-1][0] += ch
+                else:
+                    segs.append([ch, s])
+            sz_el = rpr.find(qn("w:sz")) if rpr is not None else None
+            sz = int(sz_el.get(qn("w:val"))) if sz_el is not None else BASE_SZ
+            for k, (seg, sym) in enumerate(segs):
+                nr = copy.deepcopy(r)
+                for x in list(nr):
+                    if x.tag != qn("w:rPr"):
+                        nr.remove(x)
+                if k == 0:  # a leading tab stays with the first piece
+                    for x in r:
+                        if x.tag == qn("w:tab"):
+                            nr.append(copy.deepcopy(x))
+                nt = etree.SubElement(nr, qn("w:t"))
+                nt.text = seg
+                nt.set("{http://www.w3.org/XML/1998/namespace}space", "preserve")
+                if sym:
+                    nrpr = nr.find(qn("w:rPr"))
+                    if nrpr is None:
+                        nrpr = etree.Element(qn("w:rPr"))
+                        nr.insert(0, nrpr)
+                    for tag in ("w:rFonts", "w:cs", "w:sz", "w:szCs"):
+                        for x in nrpr.findall(qn(tag)):
+                            nrpr.remove(x)
+                    fonts = etree.Element(qn("w:rFonts"))
+                    for a in ("ascii", "hAnsi", "eastAsia", "cs"):
+                        fonts.set(qn(f"w:{a}"), SYM_FONT)
+                    nrpr.insert(0, fonts)
+                    for tag in ("w:sz", "w:szCs"):
+                        e = etree.SubElement(nrpr, qn(tag))
+                        e.set(qn("w:val"), str(round(sz * 0.78)))
+                    _order_rpr(nrpr)
+                r.addprevious(nr)
+            r.getparent().remove(r)
+    return elements
+
+
+_RPR_ORDER = ["rStyle", "rFonts", "b", "bCs", "i", "iCs", "caps", "smallCaps", "strike", "dstrike", "outline",
+              "shadow", "emboss", "imprint", "noProof", "snapToGrid", "vanish", "webHidden", "color", "spacing", "w",
+              "kern", "position", "sz", "szCs", "highlight", "u", "effect", "bdr", "shd", "fitText", "vertAlign",
+              "rtl", "cs", "em", "lang", "eastAsianLayout", "specVanish", "oMath"]
+
+
+def _order_rpr(rpr):
+    """Keep rPr children in schema order (Word rejects out-of-order run properties)."""
+    key = lambda e: _RPR_ORDER.index(etree.QName(e).localname) if etree.QName(e).localname in _RPR_ORDER else 99
+    kids = sorted(list(rpr), key=key)
+    for e in kids:
+        rpr.append(e)
+
+
 def text_of(el):
     return "".join(t.text or "" for t in el.iter(qn("w:t")))
 
@@ -155,7 +233,7 @@ class Builder:
         out = []
         for b in blocks:
             out += getattr(self, b[0])(*b[1:])
-        return out
+        return fix_symbols(out)
 
     # ---------- body surgery ----------
     def children(self):
