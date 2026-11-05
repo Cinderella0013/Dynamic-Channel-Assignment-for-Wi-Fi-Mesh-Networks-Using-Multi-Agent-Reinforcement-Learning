@@ -137,5 +137,25 @@ def decomposition():
         print(ref, " ".join(f"{k} {v:+.3f}" for k, v in parts.items()), f"total {sum(parts.values()):+.3f}")
 
 
+def score100(path, sources=18, nodes=20, steps=200):
+    """Descriptive 0-100 score (not the pre-registered composite): each part is a fraction of its best possible value,
+    averaged over A+B. Delivered traffic 45% (1 - loss; throughput and loss both measure it), Jain 20%,
+    worst flows 20% (p5 / mean per-flow throughput), stability 15% (1 - switches / possible switches)."""
+    m = {k: metric(path, k) for k in ("aggregate", "jain", "p5", "loss_rate", "stability")}
+    out = {}
+    for meth in m["aggregate"]:
+        parts = []
+        for s in AB:
+            agg = m["aggregate"][meth][s]
+            tail = min(m["p5"][meth][s] / (agg / sources), 1.0) if agg > 0 else 0.0
+            parts.append([1 - m["loss_rate"][meth][s], m["jain"][meth][s], tail,
+                          max(0.0, 1 - m["stability"][meth][s] / (nodes * steps))])
+        a = np.mean(parts, axis=0)
+        out[meth] = 100 * (0.45 * a[0] + 0.20 * a[1] + 0.20 * a[2] + 0.15 * a[3])
+    return out
+
+
 if __name__ == "__main__":
     fig_main(); fig_scenarios(); fig_switching(); summary(); decomposition()
+    for f in ("runs/v8/final/composite_a_egat_h3_fair.md", "runs/v8/fresh/final/composite_a_egat_h3.md"):
+        print("score100", f, {k: round(v, 1) for k, v in score100(ROOT / f).items()})
