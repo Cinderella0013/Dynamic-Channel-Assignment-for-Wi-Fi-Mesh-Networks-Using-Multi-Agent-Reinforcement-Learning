@@ -68,8 +68,10 @@ def main():
     ap.add_argument("--workers", type=int, default=1, help="parallel episodes (one ns-3 process each)")
     ap.add_argument("--switch-delay", type=float, help="ns-3 ChannelSwitchDelay s (default downtime_steps * 0.1)")
     ap.add_argument("--route-hold", type=float, help="uplink hold after a parent change, s (default as above)")
+    ap.add_argument("--mac", type=json.loads, help='ns-3 MAC init keys, e.g. {"rts": 1}')
     a = ap.parse_args()
-    delays = {k: v for k, v in (("switch_delay_s", a.switch_delay), ("route_hold_s", a.route_hold)) if v is not None}
+    delays = {k: v for k, v in (("switch_delay_s", a.switch_delay), ("route_hold_s", a.route_hold), ("mac", a.mac))
+              if v is not None}
     run_ns3_suite(a.method, a.scenarios.split(","), range(a.seed_start, a.seed_start + a.seeds), a.out,
                   _kv(a.set), _kv(a.agent_set), a.binary, a.fake, a.workers, delays)
 
