@@ -64,8 +64,8 @@ class PaperBuilder(Builder):
         """End the two-column section, render blocks full width, then end that one-column section."""
         return [self._sect_end(self.sect2)] + self.render(blocks) + [self._sect_end(self.sect1)]
 
-    def tbl(self, rows, widths):
-        out = super().tbl(rows, widths, check=False)
+    def tbl(self, rows, widths, opts=None):
+        out = super().tbl(rows, widths, opts, check=False)
         for r in out[0].iter(qn("w:r")):
             rpr = etree.fromstring(f'<w:x xmlns:w="{W}">{self.cell_rpr}</w:x>')[0]
             if r.find(qn("w:rPr")) is not None:

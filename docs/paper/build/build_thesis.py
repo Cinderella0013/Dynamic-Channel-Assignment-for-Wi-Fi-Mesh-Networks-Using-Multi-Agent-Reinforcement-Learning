@@ -114,6 +114,25 @@ def _order_rpr(rpr):
         rpr.append(e)
 
 
+HL_FILL = "FFF2CC"  # highlight for this work's rows
+_PCT = re.compile(r"(?<![\d.])([+−-])(\d)\.(\d{3})(?![\d%])")
+
+
+def pct(s):
+    """Composite scores are reported as percentages: signed three-decimal values become +19.5% style."""
+    return _PCT.sub(lambda m: f"{m[1]}{float(m[2] + '.' + m[3]) * 100:.1f}%", s)
+
+
+_TCPR_ORDER = ["cnfStyle", "tcW", "gridSpan", "hMerge", "vMerge", "tcBorders", "shd", "noWrap", "tcMar",
+               "textDirection", "tcFitText", "vAlign", "hideMark"]
+
+
+def _order_tcpr(tcpr):
+    key = lambda e: _TCPR_ORDER.index(etree.QName(e).localname) if etree.QName(e).localname in _TCPR_ORDER else 99
+    for e in sorted(list(tcpr), key=key):
+        tcpr.append(e)
+
+
 def text_of(el):
     return "".join(t.text or "" for t in el.iter(qn("w:t")))
 
@@ -147,7 +166,7 @@ class Builder:
         base_r = tmpl.find(qn("w:r"))
         base_rpr = base_r.find(qn("w:rPr")) if base_r is not None else None
         for txt, bold, tab in runs:
-            for k, (seg, thai) in enumerate(_script_runs(txt)):
+            for k, (seg, thai) in enumerate(_script_runs(pct(txt))):
                 r = etree.SubElement(p, qn("w:r"))
                 rpr = copy.deepcopy(base_rpr) if base_rpr is not None else etree.Element(qn("w:rPr"))
                 for x in rpr.findall(qn("w:b")) + rpr.findall(qn("w:cs")) + rpr.findall(qn("w:lastRenderedPageBreak")):
@@ -200,8 +219,10 @@ class Builder:
         p.getparent().remove(p)
         return [p]
 
-    def tbl(self, rows, widths, check=True):
+    def tbl(self, rows, widths, opts=None, check=True):
+        """opts["hl"]: row indices to highlight (this work), bold on a pale yellow fill."""
         assert not check or sum(widths) == 9026, widths
+        hl = set((opts or {}).get("hl", ()))
         x = [f'<w:tbl xmlns:w="{W}"><w:tblPr><w:tblW w:w="{sum(widths)}" w:type="dxa"/><w:jc w:val="center"/><w:tblBorders>']
         x += [f'<w:{b} w:val="single" w:sz="4" w:space="0" w:color="BFBFBF"/>'
               for b in ("top", "left", "bottom", "right", "insideH", "insideV")]
@@ -210,10 +231,11 @@ class Builder:
         x += [f'<w:gridCol w:w="{w}"/>' for w in widths]
         x.append("</w:tblGrid>")
         for i, row in enumerate(rows):
-            head = i == 0
+            head, mark = i == 0, i in hl
             x.append("<w:tr><w:trPr><w:cantSplit/>" + ("<w:tblHeader/>" if head else "") + '<w:jc w:val="center"/></w:trPr>')
             for j, (cell, w) in enumerate(zip(row, widths)):
-                fill = "E8EDF4" if head else "F7F9FC"
+                fill = "E8EDF4" if head else (HL_FILL if mark else "F7F9FC")
+                cell = pct(cell)
                 numeric = cell[:1] in "+−-0123456789—"
                 jc = "left" if not head and (j == 0 or (len(cell) > 18 and not numeric)) else "center"
                 esc = cell.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
@@ -221,7 +243,7 @@ class Builder:
                          '<w:tcMar><w:top w:w="55" w:type="dxa"/><w:left w:w="80" w:type="dxa"/><w:bottom w:w="55" w:type="dxa"/>'
                          '<w:right w:w="80" w:type="dxa"/></w:tcMar><w:vAlign w:val="center"/></w:tcPr>'
                          f'<w:p><w:pPr><w:keepNext/><w:spacing w:after="40"/><w:ind w:firstLine="0"/><w:jc w:val="{jc}"/></w:pPr>'
-                         f'<w:r>{"<w:rPr><w:b/></w:rPr>" if head else ""}<w:t xml:space="preserve">{esc}</w:t></w:r></w:p></w:tc>')
+                         f'<w:r>{"<w:rPr><w:b/></w:rPr>" if head or mark else ""}<w:t xml:space="preserve">{esc}</w:t></w:r></w:p></w:tc>')
             x.append("</w:tr>")
         x.append("</w:tbl>")
         return [etree.fromstring("".join(x))]
@@ -301,6 +323,19 @@ class Builder:
             last = rows[-2]
         for vals in reversed(C.TABLE1_ROWS):
             r = copy.deepcopy(proto)
+            if vals[0].startswith("[13]"):  # this work
+                for tcpr in r.iter(qn("w:tcPr")):
+                    for x in tcpr.findall(qn("w:shd")):
+                        tcpr.remove(x)
+                    shd = etree.SubElement(tcpr, qn("w:shd"))
+                    shd.set(qn("w:val"), "clear"); shd.set(qn("w:color"), "auto"); shd.set(qn("w:fill"), HL_FILL)
+                    _order_tcpr(tcpr)
+                for run in r.iter(qn("w:r")):
+                    rpr = run.find(qn("w:rPr"))
+                    if rpr is None:
+                        rpr = etree.Element(qn("w:rPr")); run.insert(0, rpr)
+                    if rpr.find(qn("w:b")) is None:
+                        rpr.append(etree.Element(qn("w:b"))); _order_rpr(rpr)
             for tc, v in zip(r.findall(qn("w:tc")), vals):
                 ps_ = tc.findall(qn("w:p"))
                 for extra in ps_[1:]:
