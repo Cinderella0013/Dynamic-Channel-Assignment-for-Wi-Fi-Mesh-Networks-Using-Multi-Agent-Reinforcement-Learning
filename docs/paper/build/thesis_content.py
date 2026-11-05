@@ -103,7 +103,7 @@ CH3_34 = [
 CH4 = [
     ("h2", "4.1  การกำหนดรูปแบบของปัญหาและแบบจำลองระบบ"),
     ("h3", "4.1.1  แบบจำลองเครือข่ายและช่องสัญญาณ"),
-    ("p", "เครือข่ายมี n โหนด (ค่าเริ่มต้น 20) วางแบบสุ่มในพื้นที่สี่เหลี่ยมด้าน 30√n เมตร และสุ่มใหม่จนกราฟลิงก์เชื่อมถึงกัน มี 2 gateway สุ่มตำแหน่ง ลิงก์มีอยู่เมื่อกำลังรับไม่ต่ำกว่า −76 dBm และโหนดสองตัวรบกวนกันเมื่อกำลังรับไม่ต่ำกว่า −82 dBm กำลังรับคำนวณจาก log-distance path loss ตามค่าเริ่มต้นของ ns-3 (กำลังส่ง 20 dBm, reference loss 46.68 dB ที่ 1 เมตร, exponent 3) noise −94 dBm แล้วแปลง SNR เป็นอัตราส่งตามตาราง MCS ของ 802.11ax (20 MHz, 1 spatial stream) ตั้งแต่ 8.6 ถึง 143.4 Mb/s"),
+    ("p", "เครือข่ายมี n โหนด (ค่าเริ่มต้น 20) วางแบบสุ่มในพื้นที่สี่เหลี่ยมด้าน 30√n เมตร และสุ่มใหม่จนกราฟลิงก์เชื่อมถึงกัน มี 2 gateway สุ่มตำแหน่ง ลิงก์มีอยู่เมื่อกำลังรับไม่ต่ำกว่า −76 dBm และโหนดสองตัวรบกวนกันเมื่อกำลังรับไม่ต่ำกว่า −82 dBm กำลังรับคำนวณจาก log-distance path loss ตามค่าเริ่มต้นของ ns-3 [26] (กำลังส่ง 20 dBm, reference loss 46.68 dB ที่ 1 เมตร, exponent 3) noise −94 dBm แล้วแปลง SNR เป็นอัตราส่งตามตาราง MCS ของ 802.11ax (20 MHz, 1 spatial stream) ตั้งแต่ 8.6 ถึง 143.4 Mb/s"),
     ("p", "แต่ละโหนดมี 2 วิทยุ วิทยุ 1 เป็น downlink เลือกได้ 6 ช่อง (ช่อง 6 และ 11 ของ 2.4 GHz และช่อง 36–48 ของ 5 GHz) วิทยุ 0 เป็น uplink ใช้ช่องเดียวกับ downlink ของโหนดแม่ ทำให้ทุกลิงก์ในต้นไม้เส้นทางมีช่องที่ใช้ร่วมกัน ลิงก์ที่ใช้ช่องเดียวกันและอยู่ในระยะรบกวนกันแบ่ง airtime ตามจำนวนลิงก์ที่ใช้งานพร้อมกัน"),
     ("h3", "4.1.2  ทราฟฟิกและต้นทุนการสลับ"),
     ("p", "ทุกโหนดที่ไม่ใช่ gateway เป็นต้นทางของทราฟฟิก uplink ไปยัง gateway ตามสายโหนดแม่ ความต้องการของแต่ละโหนดเป็นสาย Markov แบบ on/off ที่คงสถานะด้วยความน่าจะเป็น 0.9 ต่อขั้น ขณะ on สุ่มอัตราจากการแจกแจงเอ็กซ์โพเนนเชียลตามค่าเฉลี่ยของสถานการณ์ ทราฟฟิกที่ส่งไม่ทันเข้าคิว ส่วนที่เกินขนาดคิวสูญหาย หนึ่งขั้นเวลาเท่ากับ 100 ms และหนึ่ง episode มี 200 ขั้น"),
@@ -293,3 +293,18 @@ NEW_REFS = [
     "33.  J.  Schulman,  P.  Moritz,  S.  Levine,  M.  Jordan,  and P.  Abbeel.  (2016).  \"High-Dimensional Continuous Control Using Generalized Advantage Estimation,\" International Conference on Learning Representations (ICLR).",
     "34.  C.  Yu,  A.  Velu,  E.  Vinitsky,  J.  Gao,  Y.  Wang,  A.  Bayen,  and Y.  Wu.  (2022).  \"The Surprising Effectiveness of PPO in Cooperative Multi-Agent Games,\" Advances in Neural Information Processing Systems (NeurIPS),  Datasets and Benchmarks Track.",
 ]
+
+# replaces the two closing paragraphs of section 2.2 (they described the phase-1 contribution)
+CH2_SYNTHESIS = [
+    ("p", "งานวิจัยที่ทบทวนชี้ว่า MARL ช่วยจัดสรรช่องสัญญาณได้ดีกว่าวิธีดั้งเดิมในหลายสภาวะ แต่ส่วนใหญ่เลือกเฉพาะช่องบนเครือข่าย WLAN แบบ single-hop หรือเครือข่ายเซลลูลาร์ ไม่ได้ตัดสินใจเส้นทางร่วมด้วย งานที่ใช้ graph attention ไม่ได้ใช้คุณลักษณะของลิงก์ เช่น SNR และภาระ ในการให้น้ำหนักเพื่อนบ้าน และการประเมินมักไม่นับต้นทุนของการสลับ ไม่รายงานความแปรปรวนจากการฝึก หรือใช้ตัวชี้วัดเพียงหนึ่งหรือสองตัว โครงงานนี้จึงเสนอ EGAT-MAPPO ที่ตัดสินใจช่องและเส้นทางร่วมกันบน mesh หลาย hop ใช้คุณลักษณะของขอบใน attention นำความรู้จาก Ko มาใช้เป็นจุดเริ่ม และประเมินด้วยคะแนนรวมห้าตัวชี้วัดที่ลงทะเบียนไว้ล่วงหน้า สรุปงานที่เกี่ยวข้องแสดงในตารางที่ 1"),
+]
+
+# references no longer cited after the rewrite; the rest are renumbered in order
+DROP_REFS = {13, 15, 19, 20, 21, 22, 23, 24, 25}
+
+PLAN_ROWS = {  # activity text in table 2 (plan): phase-2 work replaces the phase-1 test/analysis rows
+    "11. ทดสอบ 9 วิธีและ stress scenarios": "11. พัฒนา EGAT-MAPPO และคู่เทียบบน mesh หลาย hop (ระยะที่ 2)",
+    "12. วิเคราะห์ผล paired tests และ confidence intervals": "12. ทดลองตามโปรโตคอลที่ลงทะเบียนไว้ ablation และยืนยันบน topology ใหม่",
+}
+PLAN_CAPTION = ("แผนการดำเนินงานโครงงาน GAT–MARL และการตรวจสอบด้วย ns-3", "แผนการดำเนินงานโครงงาน (ระยะที่ 1 และระยะที่ 2)")
+COVER_DATE = ("(เดือน ตุลาคม พ.ศ.2569)", "(เดือน พฤศจิกายน พ.ศ.2569)")

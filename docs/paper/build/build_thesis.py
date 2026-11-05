@@ -323,9 +323,70 @@ class Builder:
         self.replace(a_en + 1, self.index(eq("กิตติกรรมประกาศ"), a_en), self.render(C.ABSTRACT_EN))
         a_th = self.index(eq("บทคัดย่อ"))
         self.replace(a_th + 1, self.index(st("Mr.Wissarut"), a_th), self.render(C.ABSTRACT_TH))
+        self.finalize()
         self.toc()
         self.d.save(out)
         print("saved", out, "tables", self.n_tab, "figures", self.n_fig)
+
+    # ---------- leftovers of the phase-1 text ----------
+    def _set_text(self, el, new):
+        """Write new text into el's runs, keeping each run's length (new must be as long as the old text)."""
+        ts = [t for t in el.iter(qn("w:t")) if t.text]
+        assert len(new) == sum(len(t.text) for t in ts)
+        k = 0
+        for t in ts:
+            t.text, k = new[k:k + len(t.text)], k + len(t.text)
+
+    def _replace_in(self, el, old, new):
+        ts = [t for t in el.iter(qn("w:t")) if t.text]
+        full = "".join(t.text for t in ts)
+        assert old in full, old
+        ts[0].text = full.replace(old, new)
+        for t in ts[1:]:
+            t.text = ""
+
+    def finalize(self):
+        st = lambda s: (lambda t: t.startswith(s))
+        # chapter 2: the two phase-1 synthesis paragraphs become one about this work
+        g = self.index(st("ช่องว่างของงานที่เกี่ยวข้อง"))
+        self.replace(g, self.index(st("ตารางที่ 1"), g), self.render(C.CH2_SYNTHESIS))
+        # references: drop the uncited ones, renumber the list and every citation outside tables
+        heading = self.index(lambda t: t == "เอกสารอ้างอิง", 200)
+        end = self.index(lambda t: t == "ประวัติผู้เขียน", heading)
+        kids, mapping, k = self.children(), {}, 0
+        for el in kids[heading + 1:end]:
+            m = re.match(r"\s*(\d+)\.", text_of(el))
+            if not m:
+                continue
+            n = int(m[1])
+            if n in C.DROP_REFS:
+                self.body.remove(el)
+                continue
+            k += 1
+            mapping[n] = k
+            t = next(t for t in el.iter(qn("w:t")) if t.text and m[1] in t.text)
+            t.text = t.text.replace(f"{n}.", f"{k}.", 1)
+        assert all(len(str(a)) == len(str(b)) or a < 10 for a, b in mapping.items())
+        for el in self.children()[:heading]:
+            if el.tag != qn("w:p"):
+                continue  # tables: table 1 numbers its rows locally
+            full = text_of(el)
+            new = re.sub(r"\[(\d+)\]", lambda m: f"[{mapping[int(m[1])]}]" if m[1].isdigit() and int(m[1]) in mapping
+                         else m[0], full)
+            if new != full:
+                self._set_text(el, new)
+        # table 2 (plan) and the cover date
+        for tbl in self.d.tables[:12]:
+            for tc in tbl._tbl.iter(qn("w:tc")):
+                t = text_of(tc).strip()
+                if t in C.PLAN_ROWS:
+                    self._replace_in(tc, t, C.PLAN_ROWS[t])
+        for el in self.children():
+            t = text_of(el)
+            if el.tag == qn("w:p") and C.PLAN_CAPTION[0] in t:
+                self._replace_in(el, C.PLAN_CAPTION[0], C.PLAN_CAPTION[1])
+            elif el.tag == qn("w:p") and t.strip() == C.COVER_DATE[0]:
+                self._replace_in(el, *C.COVER_DATE)
 
     # ---------- table of contents / lists (page numbers filled by fill_pages) ----------
     def toc(self):
