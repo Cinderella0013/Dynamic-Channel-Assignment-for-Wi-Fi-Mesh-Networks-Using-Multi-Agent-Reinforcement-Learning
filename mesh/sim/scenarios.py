@@ -23,6 +23,7 @@ class ScenarioConfig:
     shift_period: int | None = None
     static: bool = False
     mac_eff: float = 1.0             # CSMA efficiency of a lone link (link_capacity); 1 = no MAC overhead
+    airtime: str = "static"          # link_capacity 1/k share | "domain": work-conserving domain_allocate
     contention: float = 0.0          # efficiency loss per extra co-channel transmitter (link_capacity)
 
 

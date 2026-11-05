@@ -3,7 +3,7 @@ from dataclasses import dataclass
 
 import numpy as np
 
-from mesh.sim.flows import allocate, hops_to_gateway, min_hop_next_hop, paths_from_next_hop
+from mesh.sim.flows import domain_allocate, allocate, hops_to_gateway, min_hop_next_hop, paths_from_next_hop
 from mesh.sim.graph import build_radio_graph, common_channel, link_capacity, link_rate
 from mesh.sim.metrics import jain, p5, utility
 from mesh.sim.radio import N_CHANNELS, snr_db
@@ -157,8 +157,11 @@ class MeshEnv:
             if paths[s] is not None:
                 for u, v in zip(paths[s], paths[s][1:]):
                     active[u, v] = True
-        cap = link_capacity(self.rg, cc, rate_now, active, cfg.mac_eff, cfg.contention)
-        thr, load = allocate(paths, offered, cap)
+        if cfg.airtime == "domain":
+            thr, load, cap = domain_allocate(self.rg, cc, rate_now, paths, offered * flows, cfg.mac_eff, cfg.contention)
+        else:
+            cap = link_capacity(self.rg, cc, rate_now, active, cfg.mac_eff, cfg.contention)
+            thr, load = allocate(paths, offered, cap)
         sent = np.zeros_like(load)
         for s in np.flatnonzero(flows):
             if paths[s] is not None:

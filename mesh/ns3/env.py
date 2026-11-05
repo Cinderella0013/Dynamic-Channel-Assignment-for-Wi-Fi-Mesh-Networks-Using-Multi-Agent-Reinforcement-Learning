@@ -6,7 +6,7 @@ and demand go to the transport and the measured delivery, queues and drops repla
 import numpy as np
 
 from mesh.sim.env import EDGE_FEATS, MeshEnv, RewardWeights
-from mesh.sim.flows import allocate, paths_from_next_hop
+from mesh.sim.flows import domain_allocate, allocate, paths_from_next_hop
 from mesh.sim.graph import link_capacity, link_rate
 from mesh.sim.metrics import jain, p5, utility
 from mesh.sim.radio import CHANNELS
@@ -91,8 +91,11 @@ class Ns3MeshEnv(MeshEnv):
             if paths[s] is not None:
                 for u, v in zip(paths[s], paths[s][1:]):
                     active[u, v] = True
-        cap = link_capacity(self.rg, cc, rate_now, active, cfg.mac_eff, cfg.contention)
-        _, load = allocate(paths, offered, cap)
+        if cfg.airtime == "domain":
+            _, load, cap = domain_allocate(self.rg, cc, rate_now, paths, offered * flows, cfg.mac_eff, cfg.contention)
+        else:
+            cap = link_capacity(self.rg, cc, rate_now, active, cfg.mac_eff, cfg.contention)
+            _, load = allocate(paths, offered, cap)
         self.chan_down = np.maximum(self.chan_down - 1, 0)
         self.route_down = np.maximum(self.route_down - 1, 0)
 
