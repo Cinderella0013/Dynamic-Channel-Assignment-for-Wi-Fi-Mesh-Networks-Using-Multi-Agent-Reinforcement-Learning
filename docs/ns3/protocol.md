@@ -60,21 +60,33 @@ payload at each source during the step, runs `step_s` of simulated time, and rep
 - `tx_ok` / `tx_fail`: MPDUs acked / finally failed on u->v. `snr_db`, `rate_mbps`: mean over the step.
 - Python -> ns-3 `{"type": "end"}`; ns-3 exits 0. Any error: one line `{"type": "error", "msg": "..."}` on stdout, exit 1.
 
-## 3. ns-3 model (lane 1)
+## 3. ns-3 model (lane 1, `ns3/mesh_bridge.cc`, build with `bash ns3/build.sh` in WSL)
 
-- Node i has two `WifiNetDevice`s (radio 0, radio 1), ad-hoc MAC, 802.11ax 20 MHz, 1 SS,
+- 802.11ax 20 MHz, 1 SS, ad-hoc MAC (A-MPDU + Block Ack as ns-3 sets them up),
   `IdealWifiManager` (SNR-based MCS, closest to the sim's SNR->MCS table).
-- `LogDistancePropagationLossModel` exponent 3.0, reference loss 46.6777 dB at 1 m, both bands
-  (same as `mesh/sim/radio.py`); tx power 20 dBm; noise figure set so the noise floor is -94 dBm.
-- Link u->v uses the common channel picked like `common_channel` (largest shared index), on
-  whichever radio of each node is tuned to it.
-- Routing: every gateway owns one shared sink address; each live non-gateway node gets a default
-  route to its `next_hop` over the common-channel interface. Rebuilt every step from the action.
-- Channel switch: a changed radio retunes with `ChannelSwitchDelay = switch_delay_s`. A changed
-  `next_hop` holds that node's uplink for `route_hold_s`. Defaults (0.1 s) mirror the sim's
-  `downtime_steps=1`; sensitivity run uses ns-3 native (250 us, 0).
-- `alive=0`: both PHYs off, demand 0, its queued bytes counted as `switch` drops once.
-- External interference (S4 only, optional): a waveform generator on that channel. Not in the first matrix.
+- `LogDistancePropagationLossModel` exponent 3.0, reference loss 46.6777 dB at 1 m (same as
+  `mesh/sim/radio.py`); tx power 20 dBm; noise figure 7 dB so the noise floor is -94 dBm.
+- Channel index c is the 5 GHz channel 36 + 4c (the `channels` numbers in `init` are ignored:
+  in the sim channels differ only by index, and retuning across 2.4/5 GHz crashes ns-3.47).
+- Radios: every node has one device per channel, fixed for the run; the action's two channels
+  say which are in use. A channel that enters a node's set is usable `switch_delay_s` later.
+  Nothing retunes at runtime: ns-3.47 runtime switching stalls queues (cancelled ADDBA timeouts,
+  lost channel access) and aborts on responses scheduled across the switch.
+- Forwarding is done by the bridge, not an IP stack: a packet carries (source, ttl); each hop
+  sends it to `next_hop` on the common channel (largest shared index, as `common_channel`); a
+  gateway counts it delivered. No ARP or routing-protocol traffic.
+- A changed `next_hop` holds that node's uplink for `route_hold_s`. Defaults (0.1 s) mirror the
+  sim's `downtime_steps=1`.
+- Leaving a channel: setting (a) drops that device's queue (`switch` drops); `init` key
+  `"queue_preserve": 1` = setting (b), the queue is re-forwarded on the new route.
+- `alive=0`: the node's PHYs off; its own in-flight bytes counted as `switch` drops once.
+- External interference (S4) is not modelled; not in the matrix.
+
+Open-loop calibration (`python ns3/calibrate.py`: sim's actions and demand replayed into ns-3,
+S2, seeds 0-4, setting (a)): Ko 72.6 -> 57.8 Mbps (-20.3%), M0 49.8 -> 32.1 Mbps (-35.5%);
+loss 0.22 -> 0.36 and 0.44 -> 0.63. The sim has no MAC overhead (one 802.11ax link peaks at
+~78% of its PHY rate in ns-3) and a count-based airtime share, so it is optimistic, most under
+single-channel contention (M0). Ranking Ko > M0 holds in both. Gate in section 5: missed.
 
 ## 4. Python side (lane 2)
 
