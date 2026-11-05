@@ -82,11 +82,27 @@ payload at each source during the step, runs `step_s` of simulated time, and rep
 - `alive=0`: the node's PHYs off; its own in-flight bytes counted as `switch` drops once.
 - External interference (S4) is not modelled; not in the matrix.
 
-Open-loop calibration (`python ns3/calibrate.py`: sim's actions and demand replayed into ns-3,
-S2, seeds 0-4, setting (a)): Ko 72.6 -> 57.8 Mbps (-20.3%), M0 49.8 -> 32.1 Mbps (-35.5%);
-loss 0.22 -> 0.36 and 0.44 -> 0.63. The sim has no MAC overhead (one 802.11ax link peaks at
-~78% of its PHY rate in ns-3) and a count-based airtime share, so it is optimistic, most under
-single-channel contention (M0). Ranking Ko > M0 holds in both. Gate in section 5: missed.
+MAC options (`init` keys, optional): `"rts": 1` RTS/CTS before every data frame;
+`"ampdu_bytes"` (default 65535), `"amsdu_bytes"` (default 0 = off).
+
+Open-loop calibration (`python ns3/calibrate.py [--init JSON]`: the sim's actions and demand
+replayed into ns-3, S2, seeds 0-4, setting (a)); aggregate throughput, sim -> ns-3:
+
+| config | Ko (sim 72.6) | M0 (sim 49.8) |
+|---|---|---|
+| first version (flush pulled in-flight MPDUs out of the queue) | 57.8 (-20.3%) | 32.1 (-35.5%) |
+| fixed: only never-sent MPDUs leave the queue | 67.4 (-7.1%) | 32.1 (-35.5%) |
+| fixed + A-MSDU 7935 B | 63.2 (-12.9%) | 33.6 (-32.5%) |
+| fixed + A-MSDU + A-MPDU 1 MB | 63.0 (-13.3%) | 33.9 (-31.9%) |
+| fixed + A-MSDU + A-MPDU 1 MB + 1500 B packets | 63.3 (-12.7%) | 32.4 (-35.0%) |
+| fixed + RTS/CTS | 70.4 (-3.1%) | 37.5 (-24.6%) |
+
+The sim has no MAC overhead (one 802.11ax link peaks at ~78% of its PHY rate in ns-3) and a
+count-based airtime share without collisions, so it is optimistic, most under single-channel
+contention (M0, every link on one channel). RTS/CTS helps both methods (hidden terminals in a
+multi-hop mesh). Ko passes the 20% gate, M0 does not in any configuration. Ranking Ko > M0
+holds everywhere. The configuration is chosen from Ko/M0 only, before any learned policy is run
+in ns-3.
 
 ## 4. Python side (lane 2)
 

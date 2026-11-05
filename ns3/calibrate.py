@@ -34,7 +34,7 @@ def ns3_cmd():
     return ["bash", "-lc", run]
 
 
-def episode(scenario, policy_name, seed, switch_delay, route_hold):
+def episode(scenario, policy_name, seed, switch_delay, route_hold, extra=None):
     cfg = make_scenario(scenario)
     env = MeshEnv(cfg, seed)
     policy = {"ko": KoLocalCost, "m0": M0}[policy_name]()
@@ -53,9 +53,10 @@ def episode(scenario, policy_name, seed, switch_delay, route_hold):
             raise RuntimeError(reply["msg"])
         return reply
 
-    ask(dict(type="init", n=cfg.n, pos=env.top.pos.tolist(), gateways=list(env.gw), channels=list(CHANNELS),
+    ask({**dict(type="init", n=cfg.n, pos=env.top.pos.tolist(), gateways=list(env.gw), channels=list(CHANNELS),
              step_s=STEP_S, pkt_bytes=1200, queue_bytes=int(5 * cfg.mean_mbps * 1e6 * STEP_S / 8),
-             switch_delay_s=switch_delay, route_hold_s=route_hold, ext_interf=None, seed=seed))
+             switch_delay_s=switch_delay, route_hold_s=route_hold, ext_interf=None, seed=seed),
+         **(extra or {})})
     sim_thr, ns_thr, demand, ns_lost = [], [], [], 0.0
     sim_lost = 0.0
     while True:
@@ -92,11 +93,12 @@ def main():
     ap.add_argument("--switch-delay", type=float, default=0.1)
     ap.add_argument("--route-hold", type=float, default=0.1)
     ap.add_argument("--workers", type=int, default=5)
+    ap.add_argument("--init", type=json.loads, default={}, help='extra init keys, e.g. {"amsdu_bytes": 7935}')
     a = ap.parse_args()
     LOG_DIR.mkdir(parents=True, exist_ok=True)
     with ThreadPoolExecutor(a.workers) as ex:
-        rows = list(ex.map(lambda s: episode(a.scenario, a.policy, s, a.switch_delay, a.route_hold), a.seeds))
-    print(f"{a.scenario} {a.policy}  seed  sim_thr  ns3_thr  diff%  sim_loss  ns3_loss")
+        rows = list(ex.map(lambda s: episode(a.scenario, a.policy, s, a.switch_delay, a.route_hold, a.init), a.seeds))
+    print(f"{a.scenario} {a.policy} {json.dumps(a.init)}  seed  sim_thr  ns3_thr  diff%  sim_loss  ns3_loss")
     for r in rows:
         print(f"{r['seed']:>4}  {r['sim_thr']:8.2f} {r['ns_thr']:8.2f} {100 * (r['ns_thr'] / r['sim_thr'] - 1):6.1f}"
               f"  {r['sim_loss']:8.3f} {r['ns_loss']:8.3f}")

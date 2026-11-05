@@ -232,15 +232,11 @@ ReadTag(Ptr<const Packet> p, uint32_t& src, uint8_t& ttl)
     ttl = h[2];
 }
 
-// our payload inside a queued MPDU (MSDU = LLC/SNAP header + payload), or nullptr
+// our payload in one MSDU (LLC/SNAP header + payload), or nullptr
 static Ptr<Packet>
-MpduPayload(Ptr<const WifiMpdu> mpdu)
+MsduPayload(Ptr<const Packet> msdu)
 {
-    if (!mpdu->GetHeader().IsData())
-    {
-        return nullptr;
-    }
-    Ptr<Packet> p = mpdu->GetPacket()->Copy();
+    Ptr<Packet> p = msdu->Copy();
     LlcSnapHeader llc;
     if (p->GetSize() < llc.GetSerializedSize() + HDR)
     {
@@ -250,14 +246,35 @@ MpduPayload(Ptr<const WifiMpdu> mpdu)
     return llc.GetType() == PROTO ? p : nullptr;
 }
 
-static int
-MpduSource(Ptr<const WifiMpdu> mpdu)
+// our payloads inside a queued MPDU: one, or several when it is an A-MSDU
+static std::vector<Ptr<Packet>>
+MpduPayloads(Ptr<const WifiMpdu> mpdu)
 {
-    Ptr<Packet> p = MpduPayload(mpdu);
-    if (!p)
+    std::vector<Ptr<Packet>> out;
+    if (!mpdu->GetHeader().IsData())
     {
-        return -1;
+        return out;
     }
+    if (mpdu->GetHeader().IsQosAmsdu())
+    {
+        for (auto it = mpdu->begin(); it != mpdu->end(); ++it)
+        {
+            if (auto p = MsduPayload(it->first))
+            {
+                out.push_back(p);
+            }
+        }
+    }
+    else if (auto p = MsduPayload(mpdu->GetPacket()))
+    {
+        out.push_back(p);
+    }
+    return out;
+}
+
+static int
+SourceOf(Ptr<const Packet> p)
+{
     uint32_t src;
     uint8_t ttl;
     ReadTag(p, src, ttl);
@@ -382,23 +399,20 @@ LinkRow(uint32_t u, uint32_t v)
 static void
 OnDropped(uint32_t u, WifiMacDropReason reason, Ptr<const WifiMpdu> mpdu)
 {
-    int src = MpduSource(mpdu);
-    if (src < 0)
+    auto payloads = MpduPayloads(mpdu);
+    for (auto& p : payloads)
     {
-        return;
-    }
-    if (reason == WIFI_MAC_DROP_REACHED_RETRY_LIMIT)
-    {
-        Drop(B.dropMac, src, B.pktBytes);
-        auto it = B.macOwner.find(mpdu->GetHeader().GetAddr1());
-        if (it != B.macOwner.end())
+        int src = SourceOf(p);
+        if (src < 0)
         {
-            LinkRow(u, it->second.first)[1] += 1;
+            continue;
         }
+        Drop(reason == WIFI_MAC_DROP_REACHED_RETRY_LIMIT ? B.dropMac : B.dropOverflow, src, B.pktBytes);
     }
-    else
+    auto it = B.macOwner.find(mpdu->GetHeader().GetAddr1());
+    if (reason == WIFI_MAC_DROP_REACHED_RETRY_LIMIT && it != B.macOwner.end())
     {
-        Drop(B.dropOverflow, src, B.pktBytes); // queue full or lifetime expired
+        LinkRow(u, it->second.first)[1] += payloads.size();
     }
 }
 
@@ -406,9 +420,9 @@ static void
 OnAcked(uint32_t u, Ptr<const WifiMpdu> mpdu)
 {
     auto it = B.macOwner.find(mpdu->GetHeader().GetAddr1());
-    if (it != B.macOwner.end() && MpduSource(mpdu) >= 0)
+    if (it != B.macOwner.end())
     {
-        LinkRow(u, it->second.first)[0] += 1;
+        LinkRow(u, it->second.first)[0] += MpduPayloads(mpdu).size();
     }
 }
 
@@ -448,30 +462,36 @@ OnSniffRx(uint32_t v,
 static void
 LeaveChannel(uint32_t u, uint32_t c)
 {
+    // Only MPDUs never sent are removed. One already given a sequence number is in flight or in
+    // a Block Ack window, and pulling it out corrupts ns-3's BA state (bad_optional_access); it
+    // finishes or fails on its own.
     Ptr<WifiMacQueue> q = B.dev[u][c]->GetMac()->GetTxopQueue(AC_BE);
-    std::vector<Ptr<Packet>> moved;
-    while (q->GetNPackets() > 0)
+    std::vector<Ptr<WifiMpdu>> fresh;
+    for (Ptr<WifiMpdu> m = q->PeekFirstAvailable(SINGLE_LINK_OP_ID); m;
+         m = q->PeekFirstAvailable(SINGLE_LINK_OP_ID, m))
     {
-        Ptr<WifiMpdu> mpdu = q->Remove();
-        if (!mpdu)
+        if (!m->IsInFlight() && !m->HasSeqNoAssigned())
         {
-            break;
+            fresh.push_back(m);
         }
-        Ptr<Packet> p = MpduPayload(mpdu);
-        if (!p)
+    }
+    std::vector<Ptr<Packet>> moved;
+    for (auto& mpdu : fresh)
+    {
+        q->Remove(mpdu);
+        for (auto& p : MpduPayloads(mpdu))
         {
-            continue;
-        }
-        if (B.flushOnSwitch)
-        {
-            uint32_t src;
-            uint8_t ttl;
-            ReadTag(p, src, ttl);
-            Drop(B.dropSwitch, src, B.pktBytes);
-        }
-        else
-        {
-            moved.push_back(p);
+            if (B.flushOnSwitch)
+            {
+                if (int src = SourceOf(p); src >= 0)
+                {
+                    Drop(B.dropSwitch, src, B.pktBytes);
+                }
+            }
+            else
+            {
+                moved.push_back(p);
+            }
         }
     }
     for (auto& p : moved)
@@ -566,9 +586,17 @@ Init(const J& m)
 
     WifiHelper wifi;
     wifi.SetStandard(WIFI_STANDARD_80211ax);
-    wifi.SetRemoteStationManager("ns3::IdealWifiManager");
+    // MAC options (init keys, all optional): "rts": 1 = RTS/CTS before every data frame;
+    // "ampdu_bytes": max A-MPDU (ns-3 default 65535, 802.11ax allows up to 6500631);
+    // "amsdu_bytes": max A-MSDU (ns-3 default 0 = off; 802.11ax up to 11398)
+    const bool rts = m.has("rts") && m["rts"].num != 0;
+    wifi.SetRemoteStationManager("ns3::IdealWifiManager", "RtsCtsThreshold", UintegerValue(rts ? 0 : 65535));
     WifiMacHelper mac;
-    mac.SetType("ns3::AdhocWifiMac");
+    mac.SetType("ns3::AdhocWifiMac",
+                "BE_MaxAmpduSize",
+                UintegerValue(m.has("ampdu_bytes") ? static_cast<uint32_t>(m["ampdu_bytes"].num) : 65535),
+                "BE_MaxAmsduSize",
+                UintegerValue(m.has("amsdu_bytes") ? static_cast<uint32_t>(m["amsdu_bytes"].num) : 0));
 
     // The sim's channels differ only by index (same propagation and MCS table), so channel
     // index c is the 20 MHz 5 GHz channel 36 + 4c.
