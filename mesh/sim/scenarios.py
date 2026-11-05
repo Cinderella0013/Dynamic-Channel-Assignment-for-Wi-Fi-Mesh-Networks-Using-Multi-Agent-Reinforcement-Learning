@@ -22,6 +22,8 @@ class ScenarioConfig:
     periodic: int | None = None
     shift_period: int | None = None
     static: bool = False
+    mac_eff: float = 1.0             # CSMA efficiency of a lone link (link_capacity); 1 = no MAC overhead
+    contention: float = 0.0          # efficiency loss per extra co-channel transmitter (link_capacity)
 
 
 _SCENARIOS = {

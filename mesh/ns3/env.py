@@ -91,7 +91,7 @@ class Ns3MeshEnv(MeshEnv):
             if paths[s] is not None:
                 for u, v in zip(paths[s], paths[s][1:]):
                     active[u, v] = True
-        cap = link_capacity(self.rg, cc, rate_now, active)
+        cap = link_capacity(self.rg, cc, rate_now, active, cfg.mac_eff, cfg.contention)
         _, load = allocate(paths, offered, cap)
         self.chan_down = np.maximum(self.chan_down - 1, 0)
         self.route_down = np.maximum(self.route_down - 1, 0)

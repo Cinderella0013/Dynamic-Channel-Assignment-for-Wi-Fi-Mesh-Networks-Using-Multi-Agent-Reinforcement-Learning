@@ -44,17 +44,21 @@ def link_rate(rg, cc, ext_noise_dbm):
     return np.where(usable, rate, 0.0)
 
 
-def link_capacity(rg, cc, rate, active):
-    # ponytail: count-based airtime share (1/k). Upper bound on real CSMA loss;
-    # swap for clique-based share if Plan 2 calibration error > 15%.
+def link_capacity(rg, cc, rate, active, mac_eff=1.0, contention=0.0):
+    """Airtime share 1/k (k = co-channel active links in carrier-sense range, incl. this one), times the CSMA
+    efficiency eta(n) = mac_eff / (1 + contention * (n - 1)), n = distinct transmitters among those links.
+    Defaults (1, 0) give the plain count-based share; calibrated values in docs/ns3/protocol.md."""
+    # ponytail: 1-parameter contention curve fitted to ns-3, swap for Bianchi if the fit misses a regime
     cap = rate.copy()
     sym = active | active.T
     us, vs = np.nonzero(np.triu(sym, 1))
     near = rg.conflict | np.eye(len(rate), dtype=bool)
     for i, (u, v) in enumerate(zip(us, vs)):
-        k = 1
+        k, tx = 1, {a for a, b in ((u, v), (v, u)) if active[a, b]}
         for j, (x, y) in enumerate(zip(us, vs)):
             if i != j and cc[x, y] == cc[u, v] and near[np.ix_((u, v), (x, y))].any():
                 k += 1
-        cap[u, v] = cap[v, u] = rate[u, v] / k
+                tx.update(a for a, b in ((x, y), (y, x)) if active[a, b])
+        eta = mac_eff / (1.0 + contention * (max(len(tx), 1) - 1))
+        cap[u, v] = cap[v, u] = rate[u, v] / k * eta
     return cap

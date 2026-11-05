@@ -1,4 +1,5 @@
 """Train an RL baseline: python -m mesh.rl.train --method yuan --steps 100000 --out runs/yuan_s0.pt"""
+from dataclasses import replace
 import argparse
 import copy
 import time
@@ -41,13 +42,18 @@ def snapshot(agent):
 
 
 _KO_VAL = {}
+SCEN_SET = {}  # ScenarioConfig overrides for training and validation envs (--set), e.g. contention model
+
+
+def _scenario(name, n):
+    return replace(make_scenario(name, n=n), **SCEN_SET)
 
 
 def _val_results(policy, n):
     from mesh.eval.run import run_episode
     out = {}
     for s in VAL_SCENARIOS:
-        rows = [run_episode(MeshEnv(make_scenario(s, n=n), vs), policy) for vs in VAL_SEEDS]
+        rows = [run_episode(MeshEnv(_scenario(s, n), vs), policy) for vs in VAL_SEEDS]
         out[s] = {k: [r[k] for r in rows] for k in rows[0]}
     return out
 
@@ -103,7 +109,7 @@ def train(method, steps, seed=0, n=20, out=None, log_every=5000, val_every=None,
     ep_rewards, ep_r, t0 = [], 0.0, time.time()
     for step in range(1, steps + 1):
         if obs is None:
-            env = MeshEnv(make_scenario(str(rng.choice(SCENARIOS)), n=n), int(rng.integers(2**31)))
+            env = MeshEnv(_scenario(str(rng.choice(SCENARIOS)), n), int(rng.integers(2**31)))
             obs = env.reset()
             if teacher == "oracle" and agent.phase == "bc":
                 # bound to this episode's env (it reads future traffic); scores moves under the learner's queue rule
@@ -155,8 +161,10 @@ def main():
     ap.add_argument("--val-every", type=int, default=None)
     ap.add_argument("--teacher", choices=("ko", "oracle"), default="ko")
     ap.add_argument("--agent-set", action="append", default=[], help="learner config key=value (JSON value), e.g. ablations")
+    ap.add_argument("--set", action="append", default=[], help="ScenarioConfig override key=value (JSON value)")
     a = ap.parse_args()
     from mesh.eval.suite import _kv
+    SCEN_SET.update(_kv(a.set))
     train(a.method, a.steps, a.seed, a.n, a.out, a.log_every, a.val_every, teacher=a.teacher, **_kv(a.agent_set))
 
 
