@@ -114,7 +114,7 @@ Removing edge features, the Ko residual prior or the behaviour-cloning warm star
 
 ## G. Queue-preserving setting (b)
 
-When every method keeps its queue across a switch, switching is cheap. Ko's frequent re-optimisation then costs little. On test seeds 0-19, EGAT+H improves on Ko by +0.142 [+0.116, +0.172] and on Li by +0.165 [+0.067, +0.263] (Fig. 2). On fresh seeds 20-39, the improvement on Ko is +0.090 [+0.051, +0.138].
+When every method keeps its queue across a switch, switching is cheap. Ko's frequent re-optimisation then costs little. On test seeds 0-19, EGAT+H improves on Ko by +0.144 [+0.116, +0.172] and on Li by +0.165 [+0.067, +0.263] (Fig. 2). On fresh seeds 20-39, the improvement on Ko is +0.095 [+0.051, +0.138].
 
 Two scenarios fail criterion 3. On seeds 0-19, B4 is worse than Ko by 0.084. B4 uses a grid topology, a family never seen in training. On seeds 20-39, B4 (-0.074) and S4 (-0.055) both fail. The B4 loss comes from the loss-rate term alone. In setting (b), Ko's loss rate on B4 is very low, so the relative loss term saturates at -1 for small absolute differences. The deficit is not caused by hysteresis: EGAT without hysteresis also loses to Ko on B4 in setting (b) in four of five training seeds. A congestion-aware variant of hysteresis did not pass the validation rule, and the validation topologies do not reveal the B4 deficit. We therefore report it as a limitation. Generalising to unseen topology families when switching is free remains open.
 
