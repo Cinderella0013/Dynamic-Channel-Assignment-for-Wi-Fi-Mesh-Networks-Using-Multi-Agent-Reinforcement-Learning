@@ -314,6 +314,10 @@ class Builder:
         # chapter 2: theory 2.1.7-2.1.8, related work 2.2.10-2.2.12, rows of table 1
         self.insert_before(self.index(st("ช่องว่างของงานที่เกี่ยวข้อง")), self.render(C.CH2_RELATED))
         self.insert_before(self.index(st("2.2  งานวิจัยที่เกี่ยวข้อง")), self.render(C.CH2_THEORY))
+        for part in self.d.tables[5:8]:  # table 1 parts: rows may break across pages (keepNext on every cell
+            for tr in part._tbl.findall(qn("w:tr"))[1:]:  # paragraph pushed a whole part off its caption page)
+                for kn in tr.iter(qn("w:keepNext")):
+                    kn.getparent().remove(kn)
         t1 = self.d.tables[7]._tbl  # last part of table 1
         rows = t1.findall(qn("w:tr"))
         proto = rows[1]
@@ -385,6 +389,9 @@ class Builder:
         # chapter 2: the two phase-1 synthesis paragraphs become one about this work
         g = self.index(st("ช่องว่างของงานที่เกี่ยวข้อง"))
         self.replace(g, self.index(st("ตารางที่ 1"), g), self.render(C.CH2_SYNTHESIS))
+        for old, new in C.TEXT_FIXES:
+            el = next(e for e in self.children() if e.tag == qn("w:p") and old in text_of(e))
+            self._replace_in(el, old, new)
         # references: drop the uncited ones, renumber the list and every citation outside tables
         heading = self.index(lambda t: t == "เอกสารอ้างอิง", 200)
         end = self.index(lambda t: t == "ประวัติผู้เขียน", heading)
