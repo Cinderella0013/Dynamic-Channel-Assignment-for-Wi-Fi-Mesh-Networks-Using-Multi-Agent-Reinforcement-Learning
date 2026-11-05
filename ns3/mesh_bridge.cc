@@ -202,6 +202,8 @@ struct Bridge
     std::vector<bool> alive;
     std::vector<double> holdUntil;
     std::vector<std::vector<Ptr<Packet>>> pending; // packets waiting for a route hold or a channel
+    std::vector<double> flushAt;                   // latest scheduled release of pending, per node
+    uint32_t queuePkts{1};
     std::vector<double> carryBytes;
 
     // per-step counters (reset each step)
@@ -319,11 +321,25 @@ FlushPending(uint32_t u)
     }
 }
 
+// Held packets share the node's queue limit (a policy that changes parent every step would
+// otherwise grow them without bound), and one flush is scheduled per node and release time.
 static void
 Hold(uint32_t u, Ptr<Packet> p, double until)
 {
+    if (B.pending[u].size() >= B.queuePkts)
+    {
+        uint32_t src;
+        uint8_t ttl;
+        ReadTag(p, src, ttl);
+        Drop(B.dropOverflow, src, p->GetSize());
+        return;
+    }
     B.pending[u].push_back(p);
-    Simulator::Schedule(Seconds(until - Simulator::Now().GetSeconds()), &FlushPending, u);
+    if (B.flushAt[u] < until - 1e-12)
+    {
+        B.flushAt[u] = until;
+        Simulator::Schedule(Seconds(until - Simulator::Now().GetSeconds()), &FlushPending, u);
+    }
 }
 
 static void
@@ -535,6 +551,7 @@ Init(const J& m)
     B.flushOnSwitch = !(m.has("queue_preserve") && m["queue_preserve"].num != 0);
     const uint32_t queuePkts =
         std::max<uint32_t>(1, static_cast<uint32_t>(m["queue_bytes"].num / B.pktBytes));
+    B.queuePkts = queuePkts;
     if (m.has("ext_interf"))
     {
         std::cerr << "warning: ext_interf is not modelled in mesh_bridge; ignored\n";
@@ -560,6 +577,7 @@ Init(const J& m)
     B.alive.assign(n, true);
     B.holdUntil.assign(n, 0.0);
     B.pending.assign(n, {});
+    B.flushAt.assign(n, -1.0);
     B.carryBytes.assign(n, 0.0);
     B.genTotal.assign(n, 0.0);
     B.doneTotal.assign(n, 0.0);
