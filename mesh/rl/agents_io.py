@@ -133,6 +133,17 @@ def sequential_channels(obs, slots, scores, j):
     return c
 
 
+def hold_bonus(obs, slots, margin):
+    """(n, N_ACTIONS) switch-hysteresis bonus for joint (channel, slot) scores at greedy decoding:
+    +margin on actions keeping the node's current radio-1 channel, +margin on those keeping its parent."""
+    n = len(slots)
+    c = np.arange(N_DL_CH * K_SLOTS) // K_SLOTS
+    j = np.arange(N_DL_CH * K_SLOTS) % K_SLOTS
+    keep_c = c[None, :] == (obs.channels[:, 1] - 1)[:, None]
+    keep_j = (slots[:, j] == obs.next_hop[:, None]) & (obs.next_hop[:, None] >= 0)
+    return margin * (keep_c.astype(float) + keep_j)
+
+
 def greedy_with_sequential_channels(obs, slots, joint):
     """joint: (n, N_ACTIONS) scores with invalid actions at -inf. Returns action indices."""
     n = len(joint)

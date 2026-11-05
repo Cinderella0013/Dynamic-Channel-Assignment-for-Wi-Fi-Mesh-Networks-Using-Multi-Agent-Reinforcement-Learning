@@ -6,7 +6,7 @@ import numpy as np
 import torch
 from torch import nn
 
-from mesh.rl.agents_io import (F_M, F_O, N_ACTIONS, action_mask, agent_features, alive_mask,
+from mesh.rl.agents_io import (hold_bonus, F_M, F_O, N_ACTIONS, action_mask, agent_features, alive_mask,
                                decode, greedy_with_sequential_channels, neighbor_slots)
 from mesh.sim.env import edge_matrix
 
@@ -73,6 +73,7 @@ class LiAgent:
         self.net = GATA2CNet().to(self.device)
         self.opt = torch.optim.Adam(self.net.parameters(), lr=lr)
         self.updates = 0
+        self.switch_margin = 0.0  # greedy-decoding hysteresis (fairness ablation); set at evaluation, not saved
         self.last_action_idx = None
 
     @staticmethod
@@ -97,6 +98,8 @@ class LiAgent:
             a = torch.multinomial(torch.softmax(logits, -1), 1, generator=self.gen)[:, 0].numpy()
         elif self.hp["seq_decode"]:
             masked = np.where(s[2][0].cpu().numpy(), logits.numpy(), -np.inf)
+            if self.switch_margin:
+                masked = masked + hold_bonus(obs, slots, self.switch_margin)
             a = greedy_with_sequential_channels(obs, slots, masked)
         else:
             a = logits.argmax(-1).numpy()

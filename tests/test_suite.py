@@ -51,3 +51,15 @@ def test_factory_resolves_variant_label(tmp_path):
     import pytest
     with pytest.raises(ValueError):
         _factory(f"nope={path}")
+
+
+def test_seed_start_gives_fresh_eval_seeds(tmp_path, monkeypatch):
+    import json
+    import sys
+    from mesh.eval import suite
+    out = tmp_path / "s.json"
+    monkeypatch.setattr(sys, "argv", ["suite", "--suite", "A", "--seeds", "2", "--seed-start", "20", "--method", "m0",
+                                      "--out", str(out)])
+    suite.main()
+    d = json.load(open(out))
+    assert d["seeds"] == [20, 21]

@@ -38,7 +38,7 @@ def run_suite(methods, scenarios, seeds, out=None, overrides=None, agent_overrid
             print(f"{name} {s} reward {sum(r['reward'] for r in rows) / len(rows):.1f}", flush=True)
     if out:
         json.dump({"commit": _commit(), "overrides": overrides, "agent_overrides": agent_overrides or {},
-                   "results": results}, open(out, "w"), indent=1)
+                   "seeds": list(seeds), "results": results}, open(out, "w"), indent=1)
     return results
 
 
@@ -52,9 +52,10 @@ def _factory(spec, agent_overrides=None):
         raise ValueError(f"unknown learner label {name!r}")
     trained = LEARNERS[base].load(path)
     for k, v in (agent_overrides or {}).items():
-        if not hasattr(trained.cfg, k):
+        target = trained.cfg if hasattr(getattr(trained, "cfg", None), k) else trained  # EGAT config or agent attribute
+        if not hasattr(target, k):
             raise ValueError(f"unknown learner config field {k!r}")
-        setattr(trained.cfg, k, v)
+        setattr(target, k, v)
     return name, lambda: trained
 
 
@@ -62,6 +63,7 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--suite", default="A,B,C")
     ap.add_argument("--seeds", type=int, default=5)
+    ap.add_argument("--seed-start", type=int, default=0, help="first eval seed (20 = fresh confirmatory seeds)")
     ap.add_argument("--method", action="append", required=True, help="m0 | ko | <learner>=<checkpoint>")
     ap.add_argument("--out", required=True)
     ap.add_argument("--set", action="append", default=[], help="ScenarioConfig override key=value (JSON value)")
@@ -69,7 +71,7 @@ def main():
     a = ap.parse_args()
     scenarios = [s for key in a.suite.split(",") for s in SUITES[key]]
     overrides, agent_overrides = _kv(a.set), _kv(a.agent_set)
-    run_suite(dict(_factory(m, agent_overrides) for m in a.method), scenarios, range(a.seeds), a.out, overrides,
+    run_suite(dict(_factory(m, agent_overrides) for m in a.method), scenarios, range(a.seed_start, a.seed_start + a.seeds), a.out, overrides,
               agent_overrides)
 
 

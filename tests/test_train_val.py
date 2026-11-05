@@ -19,3 +19,13 @@ def test_snapshot_skips_buffers_and_restores_them():
     ag.mem = [1, 2, 3]
     c = T.snapshot(ag)
     assert c.mem == [] and ag.mem == [1, 2, 3]
+
+
+def test_cli_agent_set_reaches_the_learner(monkeypatch):
+    import sys
+    seen = {}
+    monkeypatch.setattr(T, "train", lambda *a, **k: seen.update(k))
+    monkeypatch.setattr(sys, "argv", ["train", "--method", "egat", "--agent-set", "use_gru=false",
+                                      "--agent-set", "use_edge_feat=false"])
+    T.main()
+    assert seen["use_gru"] is False and seen["use_edge_feat"] is False

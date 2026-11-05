@@ -6,7 +6,7 @@ import numpy as np
 import torch
 from torch import nn
 
-from mesh.rl.agents_io import (F_M, F_O, N_ACTIONS, action_mask, agent_features, alive_mask,
+from mesh.rl.agents_io import (hold_bonus, F_M, F_O, N_ACTIONS, action_mask, agent_features, alive_mask,
                                decode, greedy_with_sequential_channels, neighbor_slots)
 
 N_NBR = 3  # Yuan Table 2: number of neighbours
@@ -67,6 +67,7 @@ class YuanAgent:
         self.opt = torch.optim.Adam(self.net.parameters(), lr=lr)
         self.mem, self.mem_pos = [], 0
         self.steps = 0
+        self.switch_margin = 0.0  # greedy-decoding hysteresis (fairness ablation); set at evaluation, not saved
         self.last_action_idx = None
 
     def _prep(self, obs):
@@ -98,6 +99,9 @@ class YuanAgent:
             q = self._q(self.net, [s])[0][0].cpu().numpy()
         q = np.where(s["mask"], q, -np.inf)
         a = q.argmax(axis=1)
+        if not explore and self.switch_margin:
+            q = q + hold_bonus(obs, slots, self.switch_margin)
+            a = q.argmax(axis=1)
         if not explore and self.hp["seq_decode"]:
             a = greedy_with_sequential_channels(obs, slots, q)
         if explore:

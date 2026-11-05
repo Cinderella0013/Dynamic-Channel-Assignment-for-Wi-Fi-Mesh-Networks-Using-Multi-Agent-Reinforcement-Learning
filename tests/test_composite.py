@@ -110,3 +110,20 @@ def test_hierarchical_ci_counts_training_seed_spread(tmp_path):
     assert sig["ci"][0] > 0.01                       # run-level CI: looks significant
     assert sig["ci_h"][0] <= 0.005 < sig["ci"][0]    # training seeds resampled: can be no gain at all
     assert "training seeds resampled" in report(paths, ours="egat")
+
+
+def test_seed_matrix_ci_counts_both_methods_training_seeds(tmp_path):
+    from mesh.eval.composite import _load, seed_matrix_ci
+    paths = []
+    for i, gain in enumerate((0.0, 0.0, 0.3)):  # one good training seed out of three
+        paths.append(str(tmp_path / f"t{i}.json"))
+        _seeds(paths[-1], 20, gain)
+    res, _ = _load(paths)
+    out = seed_matrix_ci(res, "egat", "ko", ["S2"])
+    assert out["matrix"].shape == (3, 3)
+    assert abs(out["mean"] - out["matrix"].mean()) < 1e-12
+    lo, hi = out["ci"]
+    assert lo < 0.0 < hi                               # t with few seeds: one good seed is not enough
+    assert out["df"] >= 1
+    md = report(paths, ours="egat")
+    assert "t-interval" in md

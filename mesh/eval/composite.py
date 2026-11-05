@@ -121,6 +121,35 @@ def significance(results, ours, ref, scenarios, n_boot=2000, alpha=0.05, seed=0)
             "ci_h": (float(np.percentile(boot_h, 2.5)), float(np.percentile(boot_h, 97.5)))}
 
 
+def seed_matrix_ci(results, ours, ref, scenarios, alpha=0.05):
+    """Composite of every (ours training-seed file, ref training-seed file) pair, runs paired by eval seed
+    within the pair; mean over the matrix and a t-interval whose variance counts both methods' training seeds
+    (row-mean and column-mean variances, Welch-Satterthwaite df). Training seeds of different methods are
+    independent, so no file pairing is privileged."""
+    from scipy.stats import t as student_t
+    fo = sorted(set(results[ours][scenarios[0]][FILE]))
+    fr = sorted(set(results[ref][scenarios[0]][FILE]))
+    m = np.zeros((len(fo), len(fr)))
+    for s in scenarios:
+        a, b = results[ours][s], results[ref][s]
+        ta, tb = np.array(a[FILE]), np.array(b[FILE])
+        for i, f in enumerate(fo):
+            ia = np.flatnonzero(ta == f)
+            for j, g in enumerate(fr):
+                ib = np.flatnonzero(tb == g)
+                assert len(ia) == len(ib), f"{ours}/{ref} {s}: files {f}/{g} have {len(ia)} vs {len(ib)} runs"
+                m[i, j] += score({"o": {s: _pick(a, ia)}, "r": {s: _pick(b, ib)}}, "o", "r", s)
+    m /= len(scenarios)
+    no, nr = m.shape
+    vo = m.mean(1).var(ddof=1) / no if no > 1 else 0.0
+    vr = m.mean(0).var(ddof=1) / nr if nr > 1 else 0.0
+    terms = [(v, n) for v, n in ((vo, no), (vr, nr)) if v > 0]
+    df = (sum(v for v, _ in terms) ** 2 / sum(v * v / (n - 1) for v, n in terms)) if terms else max(no - 1, 1)
+    half = student_t.ppf(1 - alpha / 2, df) * np.sqrt(vo + vr)
+    return {"matrix": m, "mean": float(m.mean()), "ci": (float(m.mean() - half), float(m.mean() + half)),
+            "df": float(df)}
+
+
 def _mean_score(results, ours, ref, scenarios, weights=WEIGHTS):
     return float(np.mean([score(results, ours, ref, s, weights) for s in scenarios]))
 
@@ -141,14 +170,19 @@ def report(paths, ours="egat"):
         out.append(f"| {ref} | {_mean_score(results, ours, ref, ab):+.3f} | {cell_c} |")
 
     out += ["", "## Significance (A+B; per-scenario tests Holm-corrected at 0.05; bootstrap 95% CI of the mean)", "",
-            "| reference | mean | 95% CI | 95% CI (training seeds resampled) | scenarios better (Wilcoxon, Holm) "
+            "| reference | mean | 95% CI | 95% CI (training seeds resampled) | seed-pair mean "
+            "| 95% t-interval (both methods' training seeds) | scenarios better (Wilcoxon, Holm) "
             "| scenarios better (bootstrap, Holm) |",
-            "|---|---|---|---|---|---|"]
+            "|---|---|---|---|---|---|---|---|"]
     sigs = {ref: significance(results, ours, ref, ab) for ref in refs}
     for ref, sg in sigs.items():
+        sm = seed_matrix_ci(results, ours, ref, ab)
         out.append(f"| {ref} | {_mean_score(results, ours, ref, ab):+.3f} | [{sg['ci'][0]:+.3f}, {sg['ci'][1]:+.3f}] "
                    f"| [{sg['ci_h'][0]:+.3f}, {sg['ci_h'][1]:+.3f}] "
+                   f"| {sm['mean']:+.3f} | [{sm['ci'][0]:+.3f}, {sm['ci'][1]:+.3f}] (df {sm['df']:.1f}) "
                    f"| {sg['frac_sig']:.0%} | {sg['frac_sig_boot']:.0%} |")
+    out += ["", "Per-scenario tests treat runs as independent: they are conditional on the trained models and "
+            "do not count training-seed variance; the t-interval does."]
 
     if "ko" in refs:
         sk = significance(results, ours, "ko", scen)
