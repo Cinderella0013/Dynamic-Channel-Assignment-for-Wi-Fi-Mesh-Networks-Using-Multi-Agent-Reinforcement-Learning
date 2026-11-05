@@ -14,9 +14,9 @@ from mesh.sim.env import Action, MeshEnv
 from mesh.sim.scenarios import make_scenario
 
 
-@pytest.mark.parametrize("scenario", ["S2", "B1", "S6"])
-def test_fake_episode_matches_meshenv(scenario):
-    cfg = make_scenario(scenario)
+@pytest.mark.parametrize("scenario,qp", [("S2", False), ("B1", False), ("S6", False), ("S2", True)])
+def test_fake_episode_matches_meshenv(scenario, qp):
+    cfg = replace(make_scenario(scenario), queue_preserve=qp)
     ref = run_episode(MeshEnv(cfg, 0), KoLocalCost())
     got = run_episode(Ns3MeshEnv(cfg, 0, FakeTransport()), KoLocalCost())
     assert got.keys() == ref.keys()
@@ -48,7 +48,10 @@ def test_init_message_fields():
     assert m["channels"] == [1, 6, 11, 36, 40, 44, 48]
     assert m["queue_bytes"] == pytest.approx(5 * 6.0 * 1e6 * 0.1 / 8)
     assert m["ext_interf"] == {"channel_idx": 1, "start": 50, "end": 150, "noise_dbm": -85.0}
-    assert m["switch_delay_s"] == pytest.approx(0.1) and m["seed"] == 7
+    assert m["switch_delay_s"] == pytest.approx(0.1) and m["seed"] == 7 and "queue_preserve" not in m
+    env = Ns3MeshEnv(replace(cfg, queue_preserve=True), 7, FakeTransport())
+    env.reset()
+    assert env.transport.init_msg["queue_preserve"] == 1
     json.dumps(m)  # serialisable
 
 

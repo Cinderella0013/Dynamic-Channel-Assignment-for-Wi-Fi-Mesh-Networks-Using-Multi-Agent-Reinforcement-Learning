@@ -9,7 +9,7 @@ import numpy as np
 from mesh.sim.env import Action, MeshEnv
 from mesh.sim.flows import min_hop_next_hop
 from mesh.sim.graph import build_radio_graph
-from mesh.sim.radio import CHANNELS, snr_db
+from mesh.sim.radio import snr_db
 from mesh.sim.scenarios import ScenarioConfig
 from mesh.sim.topology import Topology
 
@@ -28,14 +28,13 @@ class FakeTransport:
         self.closed = True
 
     def open(self, m):
-        assert list(m["channels"]) == list(CHANNELS)
         self.init_msg = m
         n, step_s = m["n"], m["step_s"]
         self.to_bytes = 1e6 * step_s / 8  # Mbps-step -> bytes
         ei = m["ext_interf"]
         cfg = replace(ScenarioConfig(name="fake", n=n, n_gateways=len(m["gateways"])),
                       mean_mbps=m["queue_bytes"] / (5 * self.to_bytes), episode_len=10**9,
-                      downtime_steps=round(m["switch_delay_s"] / step_s),
+                      queue_preserve=bool(m.get("queue_preserve", 0)), downtime_steps=round(m["switch_delay_s"] / step_s),
                       ext_interf=None if ei is None else (ei["channel_idx"], ei["start"], ei["end"], ei["noise_dbm"]))
         env = MeshEnv(cfg, m["seed"])
         env.reset()

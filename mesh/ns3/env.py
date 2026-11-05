@@ -18,8 +18,6 @@ PKT_BYTES = 1200
 class Ns3MeshEnv(MeshEnv):
     def __init__(self, cfg, seed, transport, weights=RewardWeights(), switch_delay_s=None, route_hold_s=None):
         super().__init__(cfg, seed, weights)
-        if cfg.queue_preserve:
-            raise ValueError("queue_preserve is not modelled in ns-3 (setting a only)")
         self.transport = transport
         self.switch_delay_s = cfg.downtime_steps * STEP_S if switch_delay_s is None else switch_delay_s
         self.route_hold_s = cfg.downtime_steps * STEP_S if route_hold_s is None else route_hold_s
@@ -35,7 +33,7 @@ class Ns3MeshEnv(MeshEnv):
             "queue_bytes": 5 * cfg.mean_mbps / self.to_mbps, "switch_delay_s": self.switch_delay_s,
             "route_hold_s": self.route_hold_s,
             "ext_interf": None if ei is None else dict(channel_idx=ei[0], start=ei[1], end=ei[2], noise_dbm=ei[3]),
-            "seed": int(self.seed)})
+            "seed": int(self.seed), **({"queue_preserve": 1} if cfg.queue_preserve else {})})
         return obs
 
     def close(self):
