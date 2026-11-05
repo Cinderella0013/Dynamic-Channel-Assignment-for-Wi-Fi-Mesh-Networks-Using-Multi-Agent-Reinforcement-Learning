@@ -16,8 +16,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 import numpy as np
 
-from mesh.baselines.ko import KoLocalCost
-from mesh.baselines.m0 import M0
+from mesh.eval.suite import _factory, _kv
 from mesh.sim.env import MeshEnv
 from mesh.sim.radio import CHANNELS
 from mesh.sim.scenarios import make_scenario
@@ -34,10 +33,11 @@ def ns3_cmd():
     return ["bash", "-lc", run]
 
 
-def episode(scenario, policy_name, seed, switch_delay, route_hold, extra=None):
+def episode(scenario, policy_name, seed, switch_delay, route_hold, extra=None, agent_set=None):
     cfg = make_scenario(scenario)
     env = MeshEnv(cfg, seed)
-    policy = {"ko": KoLocalCost, "m0": M0}[policy_name]()
+    policy = _factory(policy_name, agent_set)[1]()  # m0 | ko | <learner>=<checkpoint>
+    policy_name = policy_name.partition("=")[0]
     obs = env.reset()
     p = subprocess.Popen(ns3_cmd(), stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True,
                          stderr=open(LOG_DIR / f"ns3_err_{scenario}_{policy_name}_{seed}.log", "w"))
@@ -88,7 +88,8 @@ def seeds_arg(text):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--scenario", default="S2")
-    ap.add_argument("--policy", default="ko", choices=["ko", "m0"])
+    ap.add_argument("--policy", default="ko", help="m0 | ko | <learner>=<checkpoint>")
+    ap.add_argument("--agent-set", action="append", default=[], help="learner config override key=value")
     ap.add_argument("--seeds", type=seeds_arg, default=seeds_arg("0-4"))
     ap.add_argument("--switch-delay", type=float, default=0.1)
     ap.add_argument("--route-hold", type=float, default=0.1)
@@ -97,7 +98,7 @@ def main():
     a = ap.parse_args()
     LOG_DIR.mkdir(parents=True, exist_ok=True)
     with ThreadPoolExecutor(a.workers) as ex:
-        rows = list(ex.map(lambda s: episode(a.scenario, a.policy, s, a.switch_delay, a.route_hold, a.init), a.seeds))
+        rows = list(ex.map(lambda s: episode(a.scenario, a.policy, s, a.switch_delay, a.route_hold, a.init, _kv(a.agent_set)), a.seeds))
     print(f"{a.scenario} {a.policy} {json.dumps(a.init)}  seed  sim_thr  ns3_thr  diff%  sim_loss  ns3_loss")
     for r in rows:
         print(f"{r['seed']:>4}  {r['sim_thr']:8.2f} {r['ns_thr']:8.2f} {100 * (r['ns_thr'] / r['sim_thr'] - 1):6.1f}"
