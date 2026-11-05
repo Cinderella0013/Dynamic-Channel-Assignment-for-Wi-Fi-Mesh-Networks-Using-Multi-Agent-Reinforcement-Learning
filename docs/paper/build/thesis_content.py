@@ -320,11 +320,8 @@ CH2_SYNTHESIS = [
 # references no longer cited after the rewrite; the rest are renumbered in order
 DROP_REFS = {12, 13, 15, 19, 20, 21, 22, 23}
 
-PLAN_ROWS = {  # activity text in table 2 (plan): phase-2 work replaces the phase-1 test/analysis rows
-    "11. ทดสอบ 9 วิธีและ stress scenarios": "11. พัฒนา EGAT-MAPPO และคู่เทียบบน mesh หลาย hop (ระยะที่ 2)",
-    "12. วิเคราะห์ผล paired tests และ confidence intervals": "12. ทดลองตามโปรโตคอลที่กำหนดไว้ ablation และยืนยันบน topology ใหม่",
-}
-PLAN_CAPTION = ("แผนการดำเนินงานโครงงาน GAT–MARL และการตรวจสอบด้วย ns-3", "แผนการดำเนินงานโครงงาน (ระยะที่ 1 และระยะที่ 2)")
+PLAN_ROWS = {}  # table 2 (plan) is kept exactly as in the source: it records the actual schedule
+PLAN_CAPTION = None
 COVER_DATE = ("(เดือน ตุลาคม พ.ศ.2569)", "(เดือน พฤศจิกายน พ.ศ.2569)")
 
 # fixes inside kept phase-1 paragraphs (review minors); applied before references are renumbered

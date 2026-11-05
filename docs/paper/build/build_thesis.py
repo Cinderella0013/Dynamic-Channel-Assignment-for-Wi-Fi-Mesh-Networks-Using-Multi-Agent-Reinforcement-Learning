@@ -425,7 +425,7 @@ class Builder:
                     self._replace_in(tc, t, C.PLAN_ROWS[t])
         for el in self.children():
             t = text_of(el)
-            if el.tag == qn("w:p") and C.PLAN_CAPTION[0] in t:
+            if el.tag == qn("w:p") and C.PLAN_CAPTION and C.PLAN_CAPTION[0] in t:
                 self._replace_in(el, C.PLAN_CAPTION[0], C.PLAN_CAPTION[1])
             elif el.tag == qn("w:p") and t.strip() == C.COVER_DATE[0]:
                 self._replace_in(el, *C.COVER_DATE)
