@@ -170,3 +170,28 @@ picked on validation). EGAT+H composite lead, S2/B1/B3, seed-pair CI:
 | Li | +17.9 | +25.7 | +13.5 | +36.4 [+21.4, +51.5] |
 | Yuan | +26.7 | +25.2 | +23.1 | +34.7 [+18.0, +51.3] |
 | Q-neutral | +71.9 | +67.3 | +71.8 | +69.5 [+67.2, +71.8] |
+
+## 8. v10 completion checks (update, not in the thesis)
+Full sim suites (`runs/v10/final/composite_{a,b}_egat_h1.md`, 20 eval seeds x 5 training seeds). EGAT+H
+composite lead, A+B, seed-pair mean with 95% t-interval over both methods' training seeds:
+
+| vs | setting a | setting b (queue_preserve) | setting a, suite C (pooled) |
+|---|---|---|---|
+| Ko | +0.230 [+0.202, +0.258] | +0.234 [+0.205, +0.263] | +0.290 |
+| M0 | +0.296 [+0.277, +0.314] | +0.301 [+0.282, +0.319] | +0.196 |
+| Li | +0.098 [-0.089, +0.285] | +0.101 [-0.073, +0.276] | +0.139 |
+| Yuan | +0.195 [+0.152, +0.238] | +0.184 [+0.147, +0.221] | +0.280 |
+| Q-neutral | +0.733 [+0.723, +0.743] | +0.741 [+0.723, +0.758] | +0.708 |
+
+Li: not significant in the sim. Li seed 4 failed in training (validation composite never above -0.047;
+other seeds reached +0.07 to +0.21) and scores -0.083 vs Ko on A+B; the other Li seeds sit near EGAT+H.
+Without Li s4 the lead is +0.035 [-0.070, +0.141]. Pooled means (+0.195) hide this. On ns-3 the Li lead
+stays significant (below), so sim and ns-3 disagree on Li only.
+
+ns-3 base MAC (no RTS), `runs/ns3/v10base`, S2/B1/B3, seed-pair CI (v8 base in brackets for reference):
+M0 +56.0 [+49.3, +62.7] (v8 +47.2), Ko +22.1 [+3.2, +41.0] (v8 +3.2, CI spanned 0),
+Li +39.1 [+24.4, +53.8], Yuan +35.0 [+17.3, +52.7], Q-neutral +68.2 [+65.8, +70.6].
+Aggregate throughput EGAT+H / Ko (Mbps): rts S2 70.9/67.1, B1 68.8/66.1, B3 48.2/43.6;
+base S2 67.8/66.4, B1 64.5/60.5, B3 46.8/42.5.
+
+Test suite: 167 passed at c7c16c7 + docs.
