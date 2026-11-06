@@ -146,3 +146,27 @@ match `MeshEnv` on the same seed.
 | 1. ns-3 scenario | main session | `ns3/mesh_bridge.cc`, `ns3/build.sh` (copied into `scratch/mesh_bridge/`) |
 | 2. Python bridge | session "py-bridge" | `mesh/ns3/*`, `tests/test_ns3_env.py` |
 | 3. docs + report | session "ns3-docs" | `ns3/report.py`, `docs/paper/ns3_section_draft.md` |
+
+## 7. Sim airtime model recalibrated against ns-3 (update, not in the thesis)
+
+The v8 policies on ns-3 (rts): EGAT+H still beat M0/Li/Yuan/Q-neutral, but its lead over Ko fell from +21%
+(sim) to +1.5% (CI spans 0). Open-loop replays traced it to the sim's static 1/k airtime share: it ignores
+MAC overhead (optimistic for a saturated channel, where EGAT+H, Li and Yuan put most of their traffic) and
+does not let a link use idle neighbours' airtime (pessimistic for configurations spread over channels, as Ko's).
+The gap grows with load (EGAT+H S2: -4% at half demand, -15% at 75%, -22% at full; Ko within 3%).
+
+`ScenarioConfig.airtime = "domain"` (`mesh.sim.flows.domain_allocate`): each loaded link's interference domain
+may use at most `mac_eff` of the airtime; idle neighbours cost nothing. Fit on S2/B3 open-loop replays of
+M0, Ko, EGAT+H, Li, Yuan: `mac_eff = 0.65` gives rms 7.4% (worst 11.4%, Ko S2 -11%); held-out B1 rms 7.0%
+(worst 10.0%); static model 23.5% / 26.5%. Method rankings match ns-3 in S2, B3, B1.
+
+v10 = v8 recipe retrained in that sim (`runs/v10`, egat/li/yuan/q_neutral x 5 seeds, switch_margin 1.0
+picked on validation). EGAT+H composite lead, S2/B1/B3, seed-pair CI:
+
+| vs | v8 sim | v8 ns-3 | v10 sim | v10 ns-3 |
+|---|---|---|---|---|
+| M0 | +32.6 | +43.8 | +34.6 | +53.9 [+46.0, +61.8] |
+| Ko | +21.2 | +1.5 [-11.5, +14.6] | +25.4 | +23.6 [+6.6, +40.6] |
+| Li | +17.9 | +25.7 | +13.5 | +36.4 [+21.4, +51.5] |
+| Yuan | +26.7 | +25.2 | +23.1 | +34.7 [+18.0, +51.3] |
+| Q-neutral | +71.9 | +67.3 | +71.8 | +69.5 [+67.2, +71.8] |
