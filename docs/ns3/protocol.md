@@ -195,3 +195,20 @@ Aggregate throughput EGAT+H / Ko (Mbps): rts S2 70.9/67.1, B1 68.8/66.1, B3 48.2
 base S2 67.8/66.4, B1 64.5/60.5, B3 46.8/42.5.
 
 Test suite: 167 passed at c7c16c7 + docs.
+
+## 9. Margin correction and final v10 numbers (now in the thesis and paper)
+
+The v10 EGAT margin 1.0 was picked against Ko only. The thesis rule is worst-case over all baselines on
+validation (`runs/v10/fair_pick.py`, `fair_egat.txt`): worst-case lead +0.074 at m=1, **+0.096 at m=2**,
++0.081 at m=3, so m=2 (`egat_h2`). Every sim, ns-3 and ablation eval was rerun at m=2; egat_h1 files are kept
+but no longer reported. Li+H and Yuan+H both pick m=1.
+
+- Sim, setting a, A+B, seed-pair mean [95% t]: test Ko +0.219 [+0.194, +0.244], Li +0.137 [-0.011, +0.286],
+  Yuan +0.191, Li+H +0.057 [+0.018, +0.097], Yuan+H +0.007 [-0.041, +0.055]; fresh 20-39 Ko +0.238,
+  Li+H +0.107, Yuan+H +0.036 [-0.019, +0.091]. All four criteria pass in a/b x test/fresh
+  (`runs/v10/final/composite_{a,b}_egat_h2_fair.md`, `runs/v10/fresh/final/composite_{a,b}_egat_h2.md`).
+- ns-3 (S2/B1/B3, topologies 0-4; `runs/v10/final/ns3_leads_egat_h2.txt`): rts Ko +10.7% [-0.9, +22.2],
+  Li+H +25.0%, Yuan+H +2.3% [-15.4, +19.9]; base Ko +7.2% [-5.5, +19.9]. m=1 gave Ko +23.6% on ns-3 but is
+  not used (margins come from validation only).
+- Ablation at m=2 (3 seeds, vs full EGAT+H): no edge +0.030, no GRU +0.070 [-0.011, +0.151], no Ko prior
+  -0.046, no BC +0.001; no GRU beats Yuan+H +0.087 [+0.048, +0.125] (post hoc).

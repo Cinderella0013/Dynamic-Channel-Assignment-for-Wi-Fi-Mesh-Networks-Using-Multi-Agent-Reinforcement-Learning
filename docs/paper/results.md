@@ -1,6 +1,6 @@
 # Results
 
-<!-- Draft v1, 2026-11-05. Every number comes from runs/v8/final/*.md, runs/v8/fresh/final/*.md or
+<!-- Superseded 2026-11-06: the thesis and paper now use v10 (calibrated sim, egat_h2); see docs/ns3/protocol.md section 9. Draft v1, 2026-11-05. Every number below comes from runs/v8/final/*.md, runs/v8/fresh/final/*.md or
 docs/paper/figures/make_figures.py (decomposition, metric means). Regenerate figures with
 `python docs/paper/figures/make_figures.py`. -->
 

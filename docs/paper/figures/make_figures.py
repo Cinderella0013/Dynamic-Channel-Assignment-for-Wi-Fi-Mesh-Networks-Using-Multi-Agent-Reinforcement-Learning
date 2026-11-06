@@ -1,5 +1,5 @@
 """Results figures from the composite reports: python docs/paper/figures/make_figures.py
-Reads runs/v8/final and runs/v8/fresh/final; writes fig_*.pdf/png next to this file and prints A+B metric means."""
+Reads runs/v10/final and runs/v10/fresh/final; writes fig_*.pdf/png next to this file and prints A+B metric means."""
 import re
 from pathlib import Path
 
@@ -11,7 +11,7 @@ OUT = Path(__file__).resolve().parent
 AB = ["S1", "S2", "S3", "S4", "S5", "S6", "B1", "B2", "B3", "B4", "B5"]
 BLUE, ORANGE, GRAY = "#0072B2", "#E69F00", "#8a8a8a"  # Okabe-Ito; validated, second series also hatched
 NAMES = {"ko": "Ko", "li": "Li", "yuan": "Yuan", "m0": "M0", "q_neutral": "Q-neutral",
-         "li_h": "Li+H", "yuan_h": "Yuan+H", "egat_h3": "EGAT+H (ours)", "egat": "EGAT (no H)"}
+         "li_h": "Li+H", "yuan_h": "Yuan+H", "egat_h2": "EGAT+H (ours)", "egat": "EGAT (no H)"}
 plt.rcParams.update({"font.size": 8, "font.family": "serif", "axes.spines.top": False,
                      "axes.spines.right": False, "axes.grid": True, "grid.color": "#e6e6e6", "axes.axisbelow": True})
 
@@ -54,8 +54,8 @@ def metric(path, name):
 
 def fig_main():
     refs = ["ko", "li", "yuan", "li_h", "yuan_h"]
-    a = significance(ROOT / "runs/v8/final/composite_a_egat_h3_fair.md")
-    f = significance(ROOT / "runs/v8/fresh/final/composite_a_egat_h3.md")
+    a = significance(ROOT / "runs/v10/final/composite_a_egat_h2_fair.md")
+    f = significance(ROOT / "runs/v10/fresh/final/composite_a_egat_h2.md")
     x, w = np.arange(len(refs)), 0.38
     fig, ax = plt.subplots(figsize=(3.5, 2.3))
     for k, (d, lab, col, hatch) in enumerate([(a, "test seeds 0-19", BLUE, None), (f, "fresh seeds 20-39", ORANGE, "///")]):
@@ -74,8 +74,8 @@ def fig_main():
 
 
 def fig_scenarios():
-    a = per_scenario(ROOT / "runs/v8/final/composite_a_egat_h3_fair.md")
-    b = per_scenario(ROOT / "runs/v8/final/composite_b_egat_h3_fair.md")
+    a = per_scenario(ROOT / "runs/v10/final/composite_a_egat_h2_fair.md")
+    b = per_scenario(ROOT / "runs/v10/final/composite_b_egat_h2_fair.md")
     x, w = np.arange(len(AB)), 0.38
     fig, ax = plt.subplots(figsize=(3.5, 2.2))
     ax.bar(x - w / 2, [a[s] for s in AB], w * 0.92, color=BLUE, label="setting (a)")
@@ -92,12 +92,12 @@ def fig_scenarios():
 
 
 def fig_switching():
-    p = ROOT / "runs/v8/final/composite_a_egat_h3_fair.md"
+    p = ROOT / "runs/v10/final/composite_a_egat_h2_fair.md"
     st, ag = metric(p, "stability"), metric(p, "aggregate")
-    q = ROOT / "runs/v8/final/composite_a_egat.md"  # EGAT without hysteresis
+    q = ROOT / "runs/v10/final/composite_a_egat.md"  # EGAT without hysteresis
     st["egat"], ag["egat"] = metric(q, "stability")["egat"], metric(q, "aggregate")["egat"]
     fig, ax = plt.subplots(figsize=(3.5, 2.3))
-    for m in ["ko", "li", "yuan", "li_h", "yuan_h", "egat", "egat_h3"]:
+    for m in ["ko", "li", "yuan", "li_h", "yuan_h", "egat", "egat_h2"]:
         s, g = np.mean([st[m][c] for c in AB]), np.mean([ag[m][c] for c in AB])
         ours = m.startswith("egat")
         ax.scatter(s, g, s=36 if ours else 22, color=BLUE if ours else GRAY, edgecolor="white", linewidth=1, zorder=3)
@@ -118,7 +118,7 @@ def save(fig, name):
 
 
 def summary():
-    p = ROOT / "runs/v8/final/composite_a_egat_h3_fair.md"
+    p = ROOT / "runs/v10/final/composite_a_egat_h2_fair.md"
     for name in ("aggregate", "jain", "p5", "loss_rate", "stability"):
         t = metric(p, name)
         print(name, {m: round(float(np.mean([t[m][c] for c in AB])), 3) for m in t})
@@ -129,10 +129,10 @@ def decomposition():
     import sys
     sys.path.insert(0, str(ROOT))
     from mesh.eval.composite import COUNT_METRICS, LOWER_BETTER, WEIGHTS, delta
-    p = ROOT / "runs/v8/final/composite_a_egat_h3_fair.md"
+    p = ROOT / "runs/v10/final/composite_a_egat_h2_fair.md"
     t = {k: metric(p, k) for k in WEIGHTS}
     for ref in ("ko", "li", "yuan", "li_h", "yuan_h", "m0"):
-        parts = {k: np.mean([w * delta(t[k]["egat_h3"][s], t[k][ref][s], k in LOWER_BETTER, k in COUNT_METRICS)
+        parts = {k: np.mean([w * delta(t[k]["egat_h2"][s], t[k][ref][s], k in LOWER_BETTER, k in COUNT_METRICS)
                              for s in AB]) for k, w in WEIGHTS.items()}
         print(ref, " ".join(f"{k} {v:+.3f}" for k, v in parts.items()), f"total {sum(parts.values()):+.3f}")
 
@@ -157,5 +157,5 @@ def score100(path, sources=18, nodes=20, steps=200):
 
 if __name__ == "__main__":
     fig_main(); fig_scenarios(); fig_switching(); summary(); decomposition()
-    for f in ("runs/v8/final/composite_a_egat_h3_fair.md", "runs/v8/fresh/final/composite_a_egat_h3.md"):
+    for f in ("runs/v10/final/composite_a_egat_h2_fair.md", "runs/v10/fresh/final/composite_a_egat_h2.md"):
         print("score100", f, {k: round(v, 1) for k, v in score100(ROOT / f).items()})
