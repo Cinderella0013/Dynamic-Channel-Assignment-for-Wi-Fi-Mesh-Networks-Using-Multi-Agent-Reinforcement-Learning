@@ -31,13 +31,11 @@ def main():
     # inputs
     box(ax, 0.1, 4.6, 2.5, 1.6, "Node features\nload, unmet, backlog,\nhop, channel, parent\n+ 4 parent candidates", MODEL)
     box(ax, 0.1, 2.6, 2.5, 1.5, "Edge features $e_{ij}$\nlink, conflict, SNR,\nrate, load, same ch.,\ndelivery ratio", MODEL)
-    # encoder and memory
-    box(ax, 3.2, 3.0, 2.6, 2.8, "Edge-aware\nGATv2 x 2\n\n$s_{ij}=a^\\top\\sigma(W_s h_i$\n$+\\,W_t h_j+W_e e_{ij})$"
-        "\n\nresidual + LayerNorm", MODEL)
-    box(ax, 6.35, 3.6, 1.3, 1.6, "GRU\nmemory\n$h_i$", MODEL)
+    # encoder (no recurrent memory: the GRU was removed, docs/paper/protocol_nogru.md)
+    box(ax, 3.2, 3.0, 4.45, 2.8, "Edge-aware GATv2 x 2\n\n$s_{ij}=a^\\top\\sigma(W_s h_i+W_t h_j+W_e e_{ij})$"
+        "\n\nresidual + LayerNorm\n\nnode embedding $h_i$", MODEL)
     arrow(ax, (2.6, 5.4), (3.2, 4.9))
     arrow(ax, (2.6, 3.35), (3.2, 3.9))
-    arrow(ax, (5.8, 4.4), (6.35, 4.4))
 
     # heads and Ko prior
     box(ax, 8.25, 5.0, 2.6, 1.3, "Route head\n4 parent slots\n(every step)", MODEL)
@@ -51,7 +49,7 @@ def main():
 
     # execution
     box(ax, 11.45, 3.0, 3.65, 3.3,
-        "Decentralised execution\n\n1. hysteresis: +m on current\n    parent and channel (m = 3)\n"
+        "Decentralised execution\n\n1. hysteresis: +m on current\n    parent and channel (m = 2)\n"
         "2. sequential channel decoding\n    (parents first)\n3. fallback to Ko if\n    entropy > 2 nats", EXEC)
     box(ax, 11.6, 1.7, 3.35, 0.85, "Action per node:\n(downlink channel, parent)", EXEC, bold=True)
     arrow(ax, (10.85, 5.6), (11.45, 5.2))
@@ -62,7 +60,7 @@ def main():
     box(ax, 3.0, 0.35, 3.3, 1.35, "Behaviour cloning from Ko\n(first 10k steps): actor CE,\ncritic on Ko returns", TRAIN)
     box(ax, 6.8, 0.35, 4.05, 1.35, "Centralised critic $V([h_i,\\ \\bar h])$\nMAPPO: PPO-clip + GAE,\n"
         "$\\lambda$: 0.5 $\\to$ 0.1, EMA + validation", TRAIN)
-    arrow(ax, (7.0, 3.6), (8.6, 1.7), dashed=True, color=EDGE[TRAIN])
+    arrow(ax, (7.0, 3.0), (8.6, 1.7), dashed=True, color=EDGE[TRAIN])
     arrow(ax, (4.6, 1.7), (4.6, 3.0), dashed=True, color=EDGE[TRAIN])
     ax.text(0.15, 0.95, "training only\n(dashed)", fontsize=6, color=EDGE[TRAIN], va="center")
     fig.tight_layout(pad=0.2)

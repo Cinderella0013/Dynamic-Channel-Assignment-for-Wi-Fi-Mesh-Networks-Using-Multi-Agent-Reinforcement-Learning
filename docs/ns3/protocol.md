@@ -212,3 +212,20 @@ but no longer reported. Li+H and Yuan+H both pick m=1.
   not used (margins come from validation only).
 - Ablation at m=2 (3 seeds, vs full EGAT+H): no edge +0.030, no GRU +0.070 [-0.011, +0.151], no Ko prior
   -0.046, no BC +0.001; no GRU beats Yuan+H +0.087 [+0.048, +0.125] (post hoc).
+
+## 10. Main model without GRU (pre-registered, now in the thesis, paper and slides)
+
+`docs/paper/protocol_nogru.md` was written before the run. EGAT with `use_gru=false`, seeds 0-4, worst-case
+margin pick on validation: m=2 (worst-case lead +0.148, `runs/v10/fair_nogru.txt`). Label `egat_nogru_h`.
+
+- Confirmation topologies 40-59, setting a, A+B, seed-pair mean [95% t] (`runs/v10/fresh2/final/composite_a_nogru.md`):
+  Ko +0.246 [+0.216, +0.276], Li +0.179 [+0.033, +0.324], Yuan +0.248, M0 +0.316, Q-neutral +0.737,
+  Li+H +0.107 [+0.075, +0.140], Yuan+H +0.067 [+0.031, +0.102], EGAT+GRU+H +0.049 [+0.007, +0.091].
+  P1, P2, P3 pass, so the decision rule makes it the main model.
+- Test 0-19 (`runs/v10/final/composite_a_nogru_test.md`): Ko +0.260, Li +0.203, Yuan+H +0.085; group C vs Ko
+  +0.336 (C3 +0.465, C4 +0.469). Fresh 20-39 (`runs/v10/fresh/final/composite_a_nogru.md`): Ko +0.253,
+  Yuan+H +0.089, EGAT+GRU+H +0.040 [-0.012, +0.091]. Setting b follows on all three sets.
+- Without hysteresis (`composite_a_nogru_m0.md`): 53.0 Mb/s, 204 switches, Ko +0.215.
+- ns-3 (`runs/v10/final/ns3_leads_nogru.txt`): rts Ko +23.1% [+15.5, +30.7], Yuan+H +16.4% [+0.4, +32.5],
+  Li+H +36.5%; base Ko +21.8% [+14.4, +29.2], Yuan+H +18.4% [+2.1, +34.6]. Base S2: Ko throughput higher
+  (66.4 vs 63.8 Mb/s), composite still +8.6%.
