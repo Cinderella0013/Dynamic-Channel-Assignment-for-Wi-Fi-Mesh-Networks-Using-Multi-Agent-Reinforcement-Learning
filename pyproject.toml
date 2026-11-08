@@ -6,10 +6,10 @@ build-backend = "setuptools.build_meta"
 name = "mesh"
 version = "0.1.0"
 requires-python = ">=3.11"
-dependencies = ["numpy", "torch"]
+dependencies = ["numpy", "torch", "scipy"]
 
 [project.optional-dependencies]
-dev = ["pytest"]
+dev = ["pytest", "matplotlib"]
 
 [tool.setuptools.packages.find]
 include = ["mesh*"]

@@ -1,0 +1,196 @@
+
+==============================================================================
+ ขั้นที่ 0: ตรวจสภาพแวดล้อมและ unit test
+==============================================================================
+  ทดสอบว่า Python, ไลบรารี และโค้ดทั้งหมดทำงานถูกต้องบนเครื่องนี้ก่อนเริ่มทดลอง
+
+  Python 3.12.10 (Windows), numpy 2.4.3, scipy 1.17.1, torch 2.11.0+cu128
+  GPU (CUDA): ไม่มี/ปิดไว้ (เดโมใช้ CPU เสมอ)
+  คำสั่งเต็ม (ใช้ในงานจริง): python -m pytest -q
+  ผล pytest (ชุดย่อย 3 ไฟล์; --full-tests = ทุกไฟล์): 27 passed in 81.63s (0:01:21)
+  [ขั้นที่ 0 เสร็จใน 92 วินาที]
+
+==============================================================================
+ ขั้นที่ 1: ตัวจำลอง (simulator) และ scenario หนึ่งแบบ
+==============================================================================
+  สร้างเครือข่าย mesh 20 โหนดของ S2 (โหลดสูง) ตามค่าที่ปรับเทียบกับ ns-3 แล้ว (airtime=domain, mac_eff=0.65)
+  แล้วรัน Ko หนึ่ง episode (200 step = 20 วินาที) เพื่อดูว่า simulator ให้ค่าวัดอะไรออกมา
+
+  scenario S2: n=20 โหนด, gateway=[10, 15], ลิงก์ทิศทางเดียว=88, โหลดเฉลี่ย 10.0 Mb/s ต่อโหนด, episode 200 step
+  ผล Ko บน S2 topology seed 0:
+    aggregate            63.612
+    jain                  0.777
+    p5                    1.779
+    utility              20.613
+    n_channel_switch    485.000
+    n_route_change      219.000
+    n_drop                0.000
+    n_interrupted       248.000
+    reward             4063.193
+    loss_rate             0.289
+  คำสั่งเต็ม (ใช้ในงานจริง): python -m mesh.eval.run --scenario S2 --policy ko --seeds 5   (ไม่มี --set: ตัวจำลองค่าเริ่มต้น)
+  [ขั้นที่ 1 เสร็จใน 2 วินาที]
+
+==============================================================================
+ ขั้นที่ 2: baseline แบบ heuristic: M0 และ Ko
+==============================================================================
+  M0 = ทุกลิงก์ใช้ช่องเดียว + เส้นทาง hop น้อยสุด (จุดอ้างอิงล่างสุด)
+  Ko = การเลือกช่อง/parent แบบ local cost (เป็นครูของ EGAT ในช่วง behaviour cloning)
+  รันบน S2,B1,B3 topology seed 0-1; คาดว่า Ko ดีกว่า M0 ชัดเจน
+
+  วิธี            aggregate       jain         p5  loss_rate   สลับ/ทาง
+  m0                 33.211      0.896      1.017      0.574        0.0
+  ko                 57.339      0.776      1.572      0.303      718.5
+  (aggregate = Mb/s รวม, jain = ความเป็นธรรม, p5 = Mb/s ของ flow แย่สุด 5%, loss_rate = สัดส่วนข้อมูลที่หาย,
+   สลับ/ทาง = จำนวนการเปลี่ยนช่องสัญญาณ + เปลี่ยนเส้นทาง ต่อ episode; ค่าเฉลี่ยทุก scenario)
+  composite ko เทียบ m0        : +0.222  (+22.2%)
+  คำสั่งเต็ม (ใช้ในงานจริง): python -m mesh.eval.suite --suite A,B --seeds 20 --set airtime=domain --set mac_eff=0.65 --set contention=0.0 --method m0 --method ko --out runs/v10/t0/a/suite_heur.json
+  [ขั้นที่ 2 เสร็จใน 3 วินาที]
+
+==============================================================================
+ ขั้นที่ 3: ฝึก EGAT-MAPPO (ไม่มี GRU) แบบสั้น: BC จาก Ko แล้วต่อด้วย MAPPO
+==============================================================================
+  ช่วงแรก agent เลียนแบบ Ko (behaviour cloning, BC) แล้วสลับไปเรียนด้วย MAPPO (PPO หลาย agent)
+  เดโมฝึก 2000 step (BC 1000 step) งานจริงฝึก 100,000 step (BC 10,000) ต่อ seed ใช้เวลาราว 3 ชั่วโมง
+  เดโมไม่ได้คาดหวังให้โมเดลเก่ง: แค่แสดงว่า pipeline การฝึกครบ (BC -> MAPPO -> validation -> บันทึก)
+  validation ของเดโมใช้ S2,B1 x topology 1000 (งานจริง: A+B ทั้ง 11 scenario x topology 1000-1003)
+
+egat step 500/2000  episodes 2  mean reward (last 10) 3469.0  15s
+egat val step 1000 composite -0.0442 (best -0.0442) ema True
+egat step 1000/2000  episodes 5  mean reward (last 10) 3086.3  91s
+egat step 1500/2000  episodes 7  mean reward (last 10) 3007.5  112s
+egat val step 2000 composite -0.0659 (best -0.0442) ema True
+egat step 2000/2000  episodes 10  mean reward (last 10) 2802.4  147s
+egat val step 2000 composite -0.0659 (best -0.0442) ema True
+  ฝึกเสร็จใน 176 วินาที, phase สุดท้าย = ppo, use_gru = False
+  บันทึก checkpoint ที่ demo\out\egat_nogru_demo.pt (ไฟล์ _val*.pt คือ candidate ที่ใช้เลือกโมเดลด้วย validation)
+  คำสั่งเต็ม (ใช้ในงานจริง): python -m mesh.rl.train --method egat --steps 100000 --seed 0 --val-every 10000 --set airtime=domain --set mac_eff=0.65 --set contention=0.0 --agent-set use_gru=false --out runs/v10/ckpt/egat_nogru_s0.pt
+  [ขั้นที่ 3 เสร็จใน 176 วินาที]
+
+==============================================================================
+ ขั้นที่ 4: โหลด checkpoint ที่ฝึกจริง (egat_nogru_s0.pt) และดูผลของ hysteresis
+==============================================================================
+  โหลดโมเดลหลักที่ฝึกครบ 100k step แล้ว ตรวจ config และรันบน S2 เทียบ margin 0 (ไม่มี hysteresis) กับ margin 2
+  hysteresis: node จะเปลี่ยนช่อง/parent ก็ต่อเมื่อทางใหม่ดีกว่าทางเดิมเกิน margin จึงสลับน้อยลงมาก
+
+  โหลด egat_nogru_s0.pt: use_gru=False, พารามิเตอร์ 45,773 ตัว, phase=ppo
+  margin 0.0: aggregate  81.79 Mb/s, jain 0.784, loss 0.084, สลับช่อง 111 ครั้ง, เปลี่ยน parent 13 ครั้ง
+  margin 2.0: aggregate  84.29 Mb/s, jain 0.786, loss 0.054, สลับช่อง 37 ครั้ง, เปลี่ยน parent 2 ครั้ง
+  คำสั่งเต็ม (ใช้ในงานจริง): python -m mesh.eval.suite --suite A,B --seeds 20 --set airtime=domain --set mac_eff=0.65 --set contention=0.0 --method egat_nogru_h=runs/v10/ckpt/egat_nogru_s0.pt --agent-set switch_margin=2.0 --out ...
+  [ขั้นที่ 4 เสร็จใน 14 วินาที]
+
+==============================================================================
+ ขั้นที่ 5: เลือก hysteresis margin บน validation topology (กฎ worst-case)
+==============================================================================
+  ลองหลาย margin บน topology validation (seed 1000+ ไม่ใช่ topology ที่ใช้ทดสอบ 0-19)
+  แต่ละ margin คิด composite เทียบ Ko, M0, Li, Yuan, Q-neutral แล้วเลือก margin ที่ 'กรณีแย่สุด' ดีที่สุด
+  เดโม: margin (0.0, 1.0, 2.0, 4.0), validation seed [1000, 1001], learner seed 0; งานจริงใช้ grid 0-4, seed 1000-1003, 5 training seed
+
+  margin 0.0: ko +0.219 m0 +0.289 li -0.070 yuan +0.133 q_neutral +0.729 | แย่สุด -0.070 | สลับ 150
+  margin 1.0: ko +0.207 m0 +0.256 li -0.028 yuan +0.152 q_neutral +0.729 | แย่สุด -0.028 | สลับ 67
+  margin 2.0: ko +0.207 m0 +0.246 li +0.056 yuan +0.168 q_neutral +0.728 | แย่สุด +0.056 | สลับ 42
+  margin 4.0: ko +0.233 m0 +0.267 li +0.075 yuan +0.189 q_neutral +0.732 | แย่สุด +0.075 | สลับ 41
+  margin ที่เลือกในเดโม = 4.0  (งานจริงเลือกได้ 2.0: runs/v10/fair_nogru.txt)
+  คำสั่งเต็ม (ใช้ในงานจริง): python runs/v10/wc_val.py nogru <k> <margin>  แล้ว  python runs/v10/fair_pick.py nogru
+  [ขั้นที่ 5 เสร็จใน 305 วินาที]
+
+==============================================================================
+ ขั้นที่ 6: ประเมินผลบน scenario A+B (11 แบบ) เทียบทุก baseline
+==============================================================================
+  A = S1-S6 (โหลดต่ำ/สูง, hotspot, สัญญาณรบกวนภายนอก, เปลี่ยนรูปแบบโหลด, node เสีย)
+  B = B1-B5 (จุดอ่อนที่รู้ของ baseline: hotspot เคลื่อนที่, โหลดเป็นคาบ, เครือข่ายห่าง, topology แบบ grid, เปลี่ยนเร็ว)
+  เดโม: topology seed 0-1, learner training seed 0; งานจริง: seed 0-19 x training seed 0-4
+
+  วิธี            aggregate       jain         p5  loss_rate   สลับ/ทาง
+  egat_nogru_h       53.785      0.806      1.586      0.182       41.1
+  ko                 52.237      0.787      1.593      0.202      604.3
+  li                 52.690      0.808      1.465      0.191       39.0
+  yuan               53.045      0.770      1.463      0.199      445.5
+  m0                 32.289      0.872      0.961      0.456        0.1
+  q_neutral           0.033      0.974      0.000      0.976     8437.2
+  (aggregate = Mb/s รวม, jain = ความเป็นธรรม, p5 = Mb/s ของ flow แย่สุด 5%, loss_rate = สัดส่วนข้อมูลที่หาย,
+   สลับ/ทาง = จำนวนการเปลี่ยนช่องสัญญาณ + เปลี่ยนเส้นทาง ต่อ episode; ค่าเฉลี่ยทุก scenario)
+  คำสั่งเต็ม (ใช้ในงานจริง): python -m mesh.eval.suite --suite A,B,C --seeds 20 --set airtime=domain --set mac_eff=0.65 --set contention=0.0 --method egat_nogru_h=runs/v10/ckpt/egat_nogru_s0.pt --agent-set switch_margin=2.0 --out runs/v10/t0/a/suite_egat_nogru_h.json
+  [ขั้นที่ 6 เสร็จใน 202 วินาที]
+
+==============================================================================
+ ขั้นที่ 7: composite score และช่วงความเชื่อมั่น (confidence interval)
+==============================================================================
+  composite = ผลรวมถ่วงน้ำหนักของการปรับปรุงสัมพัทธ์ 5 ตัววัด (aggregate 0.25, jain 0.20, p5 0.20, loss 0.20,
+  ความนิ่ง 0.15) เทียบ baseline; +0.10 = ดีกว่า 10% (กำหนดไว้ล่วงหน้าก่อนเห็นผล)
+  CI: bootstrap และ t-interval ที่นับความแปรปรวนของ training seed ทั้งสองฝั่ง
+
+  ผลเดโม (training seed เดียว, topology น้อย: ใช้ดูวิธีคำนวณ ไม่ใช่ผลทางสถิติ), bootstrap 95% CI จาก 300 รอบ:
+    เทียบ ko         composite +0.163  CI [+0.121, +0.246]  scenario ที่ดีกว่าอย่างมีนัยสำคัญ (bootstrap, Holm) 82%
+    เทียบ li         composite +0.035  CI [+0.019, +0.058]  scenario ที่ดีกว่าอย่างมีนัยสำคัญ (bootstrap, Holm) 64%
+    เทียบ yuan       composite +0.185  CI [+0.165, +0.213]  scenario ที่ดีกว่าอย่างมีนัยสำคัญ (bootstrap, Holm) 82%
+    เทียบ m0         composite +0.233  CI [+0.151, +0.296]  scenario ที่ดีกว่าอย่างมีนัยสำคัญ (bootstrap, Holm) 36%
+    เทียบ q_neutral  composite +0.728  CI [+0.722, +0.735]  scenario ที่ดีกว่าอย่างมีนัยสำคัญ (bootstrap, Holm) 100%
+
+  ผลจริงในวิทยานิพนธ์ (seed 0-19, 5 training seed, setting a) คอลัมน์ seed-pair mean และ 95% t-interval:
+    เทียบ egat_h2    +0.069  [+0.026, +0.113] (df 7.9)  (egat_h2 = EGAT มี GRU + H)
+    เทียบ li         +0.203  [+0.069, +0.337] (df 4.5)
+    เทียบ yuan       +0.241  [+0.201, +0.282] (df 8.0)
+    เทียบ q_neutral  +0.736  [+0.726, +0.746] (df 4.5)
+    เทียบ li_h       +0.133  [+0.099, +0.167] (df 7.2)
+    เทียบ yuan_h     +0.085  [+0.043, +0.128] (df 8.0)
+    เทียบ m0         +0.311  [+0.291, +0.331] (df 4.0)
+    เทียบ ko         +0.260  [+0.230, +0.290] (df 4.0)
+  คำสั่งเต็ม (ใช้ในงานจริง): python -m mesh.eval.composite runs/v10/t{0..4}/a/suite_*.json ... --ours egat_nogru_h > composite.md  (ดู runs/v10/nogru.sh)
+  [ขั้นที่ 7 เสร็จใน 35 วินาที]
+
+==============================================================================
+ ขั้นที่ 8: ตรวจความเป็นธรรม: เพิ่ม hysteresis ให้ Li และ Yuan ด้วย (Li+H, Yuan+H)
+==============================================================================
+  คำถาม: EGAT ชนะเพราะ hysteresis อย่างเดียวหรือไม่? จึงให้ baseline ได้ hysteresis แบบเดียวกัน
+  (margin 1.0 เลือกด้วยกฎ worst-case เดียวกันบน validation) แล้วเทียบอีกครั้ง
+
+  วิธี            aggregate       jain         p5  loss_rate   สลับ/ทาง
+  li_h               52.690      0.808      1.465      0.191       38.8
+  yuan_h             51.092      0.809      1.443      0.214       38.3
+  (aggregate = Mb/s รวม, jain = ความเป็นธรรม, p5 = Mb/s ของ flow แย่สุด 5%, loss_rate = สัดส่วนข้อมูลที่หาย,
+   สลับ/ทาง = จำนวนการเปลี่ยนช่องสัญญาณ + เปลี่ยนเส้นทาง ต่อ episode; ค่าเฉลี่ยทุก scenario)
+  composite egat_nogru_h เทียบ li        : +0.035  (+3.5%)
+  composite egat_nogru_h เทียบ li_h      : +0.034  (+3.4%)
+  composite egat_nogru_h เทียบ yuan      : +0.185  (+18.5%)
+  composite egat_nogru_h เทียบ yuan_h    : +0.049  (+4.9%)
+  ถ้า EGAT ยังนำ Li+H/Yuan+H แปลว่าข้อได้เปรียบไม่ได้มาจาก hysteresis อย่างเดียว
+  คำสั่งเต็ม (ใช้ในงานจริง): python -m mesh.eval.suite --suite A,B --seeds 20 --set airtime=domain --set mac_eff=0.65 --set contention=0.0 --method li_h=runs/v10/ckpt/li_s0.pt --agent-set switch_margin=1 --out ...
+  [ขั้นที่ 8 เสร็จใน 113 วินาที]
+
+==============================================================================
+ ขั้นที่ 9: setting (b) และ topology ใหม่ที่ไม่เคยใช้ (fresh)
+==============================================================================
+  setting (b): ทุกวิธีเก็บคิวไว้ตอนสลับช่อง (แบบ CSA) จึงไม่เสียข้อมูลจากการสลับ: ตัดข้อได้เปรียบของการสลับน้อย
+  fresh: topology seed 40+ ที่ไม่มีการตัดสินใจใดเคยเห็น (งานจริง 20-39 และ 40-59 ชุดละ 20)
+
+  setting (b), topology seed 0-1:
+  composite egat_nogru_h เทียบ ko        : +0.138  (+13.8%)
+  composite egat_nogru_h เทียบ m0        : +0.233  (+23.3%)
+  composite egat_nogru_h เทียบ yuan_h    : +0.049  (+4.9%)
+  setting (a), fresh topology seed 40-41:
+  composite egat_nogru_h เทียบ ko        : +0.240  (+24.0%)
+  composite egat_nogru_h เทียบ m0        : +0.306  (+30.6%)
+  composite egat_nogru_h เทียบ yuan_h    : +0.066  (+6.6%)
+  คำสั่งเต็ม (ใช้ในงานจริง): python -m mesh.eval.suite --suite A,B --seeds 20 --seed-start 40 --set airtime=domain --set mac_eff=0.65 --set contention=0.0 [--set queue_preserve=true] --method ...
+  [ขั้นที่ 9 เสร็จใน 393 วินาที]
+
+==============================================================================
+ ขั้นที่ 10: ยืนยันผลด้วย ns-3 (packet-level 802.11ax)
+==============================================================================
+  นำ policy ที่ฝึกแล้ว (ไม่ฝึกใหม่) ไปรันใน ns-3.47 ซึ่งจำลองระดับ packet: MAC/PHY, คิว, การชนกันจริง
+  เดโม: S2 topology seed 0, Ko เทียบ EGAT+H, MAC แบบ RTS/CTS; งานจริง: S2,B1,B3 x seed 0-4 x 5 training seed
+
+  กำลังรัน ns-3 (หนึ่ง process ต่อ episode)...
+  วิธี            aggregate       jain         p5  loss_rate   สลับ/ทาง
+  ko                 61.476      0.707      1.163      0.313      731.0
+  egat_nogru_h       77.551      0.793      2.344      0.134       51.0
+  (aggregate = Mb/s รวม, jain = ความเป็นธรรม, p5 = Mb/s ของ flow แย่สุด 5%, loss_rate = สัดส่วนข้อมูลที่หาย,
+   สลับ/ทาง = จำนวนการเปลี่ยนช่องสัญญาณ + เปลี่ยนเส้นทาง ต่อ episode; ค่าเฉลี่ยทุก scenario)
+  composite egat_nogru_h เทียบ ko        : +0.543  (+54.3%)
+  (topology เดียว ตัวเลขแกว่งมาก ใช้ดูว่า pipeline ns-3 ทำงานและทิศทางตรงกับตัวจำลอง)
+  ผลจริง (runs/v10/final/ns3_leads_nogru.txt): EGAT+H นำ Ko +23.1% CI [+15.5, +30.7] ใน ns-3 RTS/CTS
+  คำสั่งเต็ม (ใช้ในงานจริง): wsl.exe -e bash /mnt/e/MESH/runs/ns3/run_matrix_nogru.sh 2   (ภายใน: python3 -m mesh.ns3.suite --workers 8 --mac '{"rts": 1}' ...)
+  [ขั้นที่ 10 เสร็จใน 133 วินาที]
+
+สรุปเวลา: ขั้น 0 92s, ขั้น 1 2s, ขั้น 2 3s, ขั้น 3 176s, ขั้น 4 14s, ขั้น 5 305s, ขั้น 6 202s, ขั้น 7 35s, ขั้น 8 113s, ขั้น 9 393s, ขั้น 10 133s  รวม 24.5 นาที

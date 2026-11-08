@@ -1,0 +1,10 @@
+# Core (mesh/): simulator, models, training, evaluation, composite report
+numpy>=1.26
+torch>=2.2          # CPU build is enough; GPU (CUDA) only speeds up training
+scipy>=1.11         # mesh.eval.composite (Wilcoxon, t-interval)
+# Tests
+pytest>=8
+# Figures (docs/paper/figures/*.py)
+matplotlib>=3.8
+# Optional: rebuilding the thesis/paper .docx (docs/paper/build/*.py)
+# python-docx>=1.1  lxml>=5  pymupdf>=1.24
