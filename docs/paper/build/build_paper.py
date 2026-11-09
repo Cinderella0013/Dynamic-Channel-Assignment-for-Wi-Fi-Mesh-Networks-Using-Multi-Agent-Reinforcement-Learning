@@ -1,7 +1,8 @@
 # -*- coding: utf-8 -*-
 """Rebuild the Thai conference paper around EGAT-MAPPO: python docs/paper/build/build_paper.py SRC.docx OUT.docx
-Keeps the title block and the paper's own formatting; the body runs in two columns, and each "wide" block
-(full-width tables) gets its own single-column section, as in the source paper."""
+Keeps the title block and the paper's own formatting. As in the source paper (Research_Paper_NW14), sections up to
+the method run in two columns (each "wide" block gets its own single-column section) and everything from the
+experiment design onward, references included, runs in one column."""
 import copy
 import sys
 from pathlib import Path
@@ -38,6 +39,7 @@ class PaperBuilder(Builder):
         one = [s for s in sects if 'w:num="2"' not in etree.tostring(s).decode() and s.find(qn("w:type")) is not None]
         self.sect2, self.sect1 = two[0], one[0]  # continuous two-column / one-column section ends
         self.cell_rpr = CELL_RPR
+        self.flat = False  # True once the body has switched to one column
 
     def h1(self, s):
         return [self._para(self.t_h1, [(s, False, False)])]
@@ -62,10 +64,30 @@ class PaperBuilder(Builder):
 
     def wide(self, blocks):
         """End the two-column section, render blocks full width, then end that one-column section."""
+        if self.flat:
+            return self.render(blocks)
         return [self._sect_end(self.sect2)] + self.render(blocks) + [self._sect_end(self.sect1)]
 
+    def img(self, name, width_cm):
+        return super().img(name, max(width_cm, 10.5) if self.flat else width_cm)
+
     def tbl(self, rows, widths, opts=None):
+        if self.flat and sum(widths) < 9026:  # column-width table in the one-column part: stretch to text width
+            widths = [round(w * 9026 / sum(widths)) for w in widths]
+            widths[-1] += 9026 - sum(widths)
         out = super().tbl(rows, widths, opts, check=False)
+        # source-paper table look: pale grey rules, white body cells, tight margins
+        for el in out[0].iter(qn("w:top"), qn("w:left"), qn("w:bottom"), qn("w:right"), qn("w:insideH"), qn("w:insideV")):
+            if el.get(qn("w:color")) == "BFBFBF":
+                el.set(qn("w:color"), "D9D9D9")
+        for shd in out[0].iter(qn("w:shd")):
+            if shd.get(qn("w:fill")) == "F7F9FC":
+                shd.set(qn("w:fill"), "FFFFFF")
+        for kn in out[0].findall(qn("w:tr"))[-1].iter(qn("w:keepNext")):  # don't chain the next block to the table
+            kn.getparent().remove(kn)
+        for mar in out[0].iter(qn("w:tcMar")):
+            for side in mar:
+                side.set(qn("w:w"), "25" if side.tag in (qn("w:top"), qn("w:bottom")) else "55")
         for r in out[0].iter(qn("w:r")):
             rpr = etree.fromstring(f'<w:x xmlns:w="{W}">{self.cell_rpr}</w:x>')[0]
             if r.find(qn("w:rPr")) is not None:
@@ -76,7 +98,10 @@ class PaperBuilder(Builder):
 
     def run(self, out):
         eq = lambda s: (lambda t: t == s)
-        body = self.render(C.BODY) + [self._para(self.t_ref, [(r, False, False)]) for r in C.REFS]
+        cut = next(i for i, b in enumerate(C.BODY) if b[0] == "h1" and b[1].startswith("5 "))  # experiment design
+        body = self.render(C.BODY[:cut]) + [self._sect_end(self.sect2)]
+        self.flat = True
+        body += self.render(C.BODY[cut:]) + [self._para(self.t_ref, [(r, False, False)]) for r in C.REFS]
         start = self.index(eq("1 บทนำ"))
         kids = self.children()
         final = kids[-1]  # body-level sectPr (last section: one column)
@@ -84,8 +109,6 @@ class PaperBuilder(Builder):
             self.body.remove(el)
         for el in body:
             final.addprevious(el)
-        # the body ends in the two-column layout: close it before the final (one-column) section
-        final.addprevious(self._sect_end(self.sect2))
         a_en = self.index(eq("Abstract"))
         sect_end = next(i for i, el in enumerate(self.children()) if i > a_en and el.tag == qn("w:p")
                         and el.find(qn("w:pPr") + "/" + qn("w:sectPr")) is not None)
