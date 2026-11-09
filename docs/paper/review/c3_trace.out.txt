@@ -1,0 +1,225 @@
+====================================================================================================
+PART 1  TRAINING PATH  (agent.act(explore=True) -> env.step -> per_agent_reward -> agent.learn)
+====================================================================================================
+
+--- t=10 (channel step; is_chan_step=True, t_c=10) ---
+  prior scales: kappa_route=softplus(beta_r)=0.7034  kappa_chan=softplus(beta_c)=0.7234
+  node 10 (gateway):
+    candidate slots (link nbrs by hop asc, SNR desc, id; -1 pad): [17, 5, 8, 13]
+    slot hop_to_gw: [1, 1, 1, 1]   own hop 0   current parent -1   current radio-1 channel 1
+    progress mask (valid & strictly closer; slot 0 forced if none): [1, 0, 0, 0]
+    [1] route head raw logits z            : [ 6.665 -8.087  0.62  -2.596]
+    [2] Ko slot cost (row z-score, inf->0) : [0. 0. 0. 0.]
+    [3] after prior z - kappa*cost         : [ 6.665 -8.087  0.62  -2.596]
+    [4] after progress mask (-1e9)         : [ 6.665e+00 -1.000e+09 -1.000e+09 -1.000e+09]
+    route probs pi_p                       : [1. 0. 0. 0.]   H_route=-0.0000 nats
+    [1] chan head raw logits               : [ 1.915  1.031 -0.866 -1.351 -1.972  0.41 ]
+    [2] Ko chan cost (row z-score)         : [-0.517 -0.517 -0.382  2.228 -0.517 -0.295]
+    [3] after prior (no channel mask)      : [ 2.289  1.405 -0.59  -2.962 -1.597  0.623]
+    chan probs pi_c                        : [0.594 0.245 0.033 0.003 0.012 0.112]   H_chan=1.0848 nats
+    sampled proposal: slot j=0  channel idx c=0
+    executed: next_hop=-1  channels(radio0,radio1)=[0, 1]  (a=c*4+j=0)
+    stored logp_route=log pi_p(j)=0.0000  logp_chan=log pi_c(c)=-0.5212  -> PPO old logp = logp_route + is_chan*logp_chan = -0.5212
+    value v_i = 76.797
+  node 0:
+    candidate slots (link nbrs by hop asc, SNR desc, id; -1 pad): [4, 7, 14, 9]
+    slot hop_to_gw: [3, 3, 3, 4]   own hop 4   current parent 14   current radio-1 channel 4
+    progress mask (valid & strictly closer; slot 0 forced if none): [1, 1, 1, 0]
+    [1] route head raw logits z            : [ 1.207 -6.944  8.539 -1.32 ]
+    [2] Ko slot cost (row z-score, inf->0) : [-0.998 -0.998  1.081  0.915]
+    [3] after prior z - kappa*cost         : [ 1.909 -6.242  7.779 -1.963]
+    [4] after progress mask (-1e9)         : [ 1.909e+00 -6.242e+00  7.779e+00 -1.000e+09]
+    route probs pi_p                       : [0.003 0.    0.997 0.   ]   H_route=0.0194 nats
+    [1] chan head raw logits               : [-1.305 -2.016  0.997  2.048  0.236 -0.104]
+    [2] Ko chan cost (row z-score)         : [-0.918 -0.918  0.406  1.699  0.648 -0.918]
+    [3] after prior (no channel mask)      : [-0.641 -1.352  0.703  0.819 -0.233  0.56 ]
+    chan probs pi_c                        : [0.069 0.034 0.265 0.298 0.104 0.23 ]   H_chan=1.5857 nats
+    sampled proposal: slot j=2  channel idx c=2
+    executed: next_hop=14  channels(radio0,radio1)=[3, 3]  (a=c*4+j=10)
+    stored logp_route=log pi_p(j)=-0.0028  logp_chan=log pi_c(c)=-1.3272  -> PPO old logp = logp_route + is_chan*logp_chan = -1.3300
+    value v_i = 26.106
+  node 1:
+    candidate slots (link nbrs by hop asc, SNR desc, id; -1 pad): [2, 12, 19, -1]
+    slot hop_to_gw: [1, 2, 2, None]   own hop 2   current parent 2   current radio-1 channel 4
+    progress mask (valid & strictly closer; slot 0 forced if none): [1, 0, 0, 0]
+    [1] route head raw logits z            : [ 6.787 -8.315  0.679 -2.681]
+    [2] Ko slot cost (row z-score, inf->0) : [-1.056 -0.286  1.342  0.   ]
+    [3] after prior z - kappa*cost         : [ 7.53  -8.114 -0.265 -2.681]
+    [4] after progress mask (-1e9)         : [ 7.53e+00 -1.00e+09 -1.00e+09 -1.00e+09]
+    route probs pi_p                       : [1. 0. 0. 0.]   H_route=-0.0000 nats
+    [1] chan head raw logits               : [-1.405 -1.136  0.64   2.004 -0.335 -0.275]
+    [2] Ko chan cost (row z-score)         : [-0.58   0.033 -0.58   2.183 -0.476 -0.58 ]
+    [3] after prior (no channel mask)      : [-0.986 -1.159  1.059  0.425  0.009  0.145]
+    chan probs pi_c                        : [0.051 0.043 0.397 0.211 0.139 0.159]   H_chan=1.5496 nats
+    sampled proposal: slot j=0  channel idx c=2
+    executed: next_hop=2  channels(radio0,radio1)=[4, 3]  (a=c*4+j=8)
+    stored logp_route=log pi_p(j)=0.0000  logp_chan=log pi_c(c)=-0.9239  -> PPO old logp = logp_route + is_chan*logp_chan = -0.9239
+    value v_i = 30.250
+  _logp_entropy (update path): max|logp - stored old| = 2.38e-07  -> ratio = 1 at collection
+  loss entropy term per node = H_route + is_chan*H_chan; nodes shown: [1.0848, 1.6051, 1.5496]
+  training executes the proposal unchanged: no hysteresis, no sequential decoding, no fallback (all gated by explore=False). Executed parent == slots[j] for every node with a valid slot: True
+
+--- t=11 (non-channel step; is_chan_step=False, t_c=10) ---
+  prior scales: kappa_route=softplus(beta_r)=0.7034  kappa_chan=softplus(beta_c)=0.7234
+  node 10 (gateway):
+    candidate slots (link nbrs by hop asc, SNR desc, id; -1 pad): [17, 5, 8, 13]
+    slot hop_to_gw: [1, 1, 1, 1]   own hop 0   current parent -1   current radio-1 channel 1
+    progress mask (valid & strictly closer; slot 0 forced if none): [1, 0, 0, 0]
+    [1] route head raw logits z            : [ 6.702 -8.224  0.837 -2.648]
+    [2] Ko slot cost (row z-score, inf->0) : [0. 0. 0. 0.]
+    [3] after prior z - kappa*cost         : [ 6.702 -8.224  0.837 -2.648]
+    [4] after progress mask (-1e9)         : [ 6.702e+00 -1.000e+09 -1.000e+09 -1.000e+09]
+    route probs pi_p                       : [1. 0. 0. 0.]   H_route=-0.0000 nats
+    [1] chan head raw logits               : [ 1.926  1.066 -0.823 -1.329 -2.01   0.322]
+    [2] Ko chan cost (row z-score)         : [-1.035 -1.035  0.883  0.996 -0.922  1.112]
+    [3] after prior (no channel mask)      : [ 2.674  1.815 -1.462 -2.049 -1.343 -0.482]
+    chan probs pi_c                        : [0.663 0.281 0.011 0.006 0.012 0.028]   H_chan=0.8610 nats
+    sampled proposal: slot j=0  channel idx c=0  (head sample discarded: channel held, c=cur_chan)
+    executed: next_hop=-1  channels(radio0,radio1)=[0, 1]  (a=c*4+j=0)
+    stored logp_route=log pi_p(j)=0.0000  logp_chan=log pi_c(c)=-0.4112  -> PPO old logp = logp_route + is_chan*logp_chan = 0.0000
+    value v_i = 77.042
+  node 0:
+    candidate slots (link nbrs by hop asc, SNR desc, id; -1 pad): [4, 7, 14, 9]
+    slot hop_to_gw: [3, 3, 3, 4]   own hop 4   current parent 14   current radio-1 channel 3
+    progress mask (valid & strictly closer; slot 0 forced if none): [1, 1, 1, 0]
+    [1] route head raw logits z            : [ 0.976 -6.372  8.058 -1.038]
+    [2] Ko slot cost (row z-score, inf->0) : [ 1.026  0.653 -1.585 -0.093]
+    [3] after prior z - kappa*cost         : [ 0.255 -6.831  9.173 -0.973]
+    [4] after progress mask (-1e9)         : [ 2.546e-01 -6.831e+00  9.173e+00 -1.000e+09]
+    route probs pi_p                       : [0. 0. 1. 0.]   H_route=0.0013 nats
+    [1] chan head raw logits               : [-1.5   -1.637  0.93   1.97   0.147 -0.189]
+    [2] Ko chan cost (row z-score)         : [-0.231 -1.25   0.873  0.522 -1.25   1.336]
+    [3] after prior (no channel mask)      : [-1.333 -0.733  0.299  1.592  1.051 -1.156]
+    chan probs pi_c                        : [0.026 0.047 0.132 0.483 0.281 0.031]   H_chan=1.3223 nats
+    sampled proposal: slot j=2  channel idx c=2  (head sample discarded: channel held, c=cur_chan)
+    executed: next_hop=14  channels(radio0,radio1)=[3, 3]  (a=c*4+j=10)
+    stored logp_route=log pi_p(j)=-0.0001  logp_chan=log pi_c(c)=-2.0217  -> PPO old logp = logp_route + is_chan*logp_chan = -0.0001
+    value v_i = 26.422
+  node 1:
+    candidate slots (link nbrs by hop asc, SNR desc, id; -1 pad): [2, 12, 19, -1]
+    slot hop_to_gw: [1, 2, 2, None]   own hop 2   current parent 2   current radio-1 channel 3
+    progress mask (valid & strictly closer; slot 0 forced if none): [1, 0, 0, 0]
+    [1] route head raw logits z            : [ 7.821 -8.928  0.479 -3.697]
+    [2] Ko slot cost (row z-score, inf->0) : [-1.136 -0.161  1.297  0.   ]
+    [3] after prior z - kappa*cost         : [ 8.62  -8.815 -0.433 -3.697]
+    [4] after progress mask (-1e9)         : [ 8.62e+00 -1.00e+09 -1.00e+09 -1.00e+09]
+    route probs pi_p                       : [1. 0. 0. 0.]   H_route=-0.0000 nats
+    [1] chan head raw logits               : [-1.321 -1.045  0.583  1.827 -0.349 -0.258]
+    [2] Ko chan cost (row z-score)         : [-0.872  0.004 -0.815  1.802 -0.872  0.752]
+    [3] after prior (no channel mask)      : [-0.691 -1.048  1.172  0.523  0.282 -0.802]
+    chan probs pi_c                        : [0.066 0.046 0.428 0.224 0.176 0.059]   H_chan=1.4944 nats
+    sampled proposal: slot j=0  channel idx c=2  (head sample discarded: channel held, c=cur_chan)
+    executed: next_hop=2  channels(radio0,radio1)=[4, 3]  (a=c*4+j=8)
+    stored logp_route=log pi_p(j)=0.0000  logp_chan=log pi_c(c)=-0.8484  -> PPO old logp = logp_route + is_chan*logp_chan = 0.0000
+    value v_i = 31.269
+  _logp_entropy (update path): max|logp - stored old| = 4.68e-07  -> ratio = 1 at collection
+  loss entropy term per node = H_route + is_chan*H_chan; nodes shown: [0.0, 0.0013, 0.0]
+  training executes the proposal unchanged: no hysteresis, no sequential decoding, no fallback (all gated by explore=False). Executed parent == slots[j] for every node with a valid slot: True
+
+--- episode end: env.t=200 = episode_len 200 (a time limit), done=True at the last transition; buffer 200/1000 (no update fired) ---
+  node 0: last step  r=1.163  v=32.114  return target=1.163  (== r: V(s_200) multiplied by (1-done)=0, i.e. the time limit is treated as termination)
+  node 0: step T-1   r=1.134  v=30.755  next v=32.114  return target=3.791  (bootstrapped: r + gamma*v_next + gamma*lambda*A_next)
+  bootstrap mask b and trace mask c are both (1-done): identical; truncation is not distinguished.
+  rollout 1000 % episode_len 200 = 0, bc_steps 10000 % episode_len = 0: every rollout ends on done=True, so the _last_value bootstrap branch is never taken in these runs.
+  dead/unalive nodes: reward 0 and loss weight 0 (alive mask); in S2 all 20 nodes alive.
+  BC teacher targets this episode: 4000 live-node targets, 50 (1.2%) fall on a progress-masked slot and get no route CE (allowed=0); their channel CE still applies on channel steps.
+
+====================================================================================================
+PART 2  DETERMINISTIC EVALUATION EPOCH  (agent.act(explore=False), switch_margin=2.0), S2 seed 0
+====================================================================================================
+
+--- eval t=0 (is_chan_step=True) ---
+  node 10 (gateway):
+    candidate slots (link nbrs by hop asc, SNR desc, id; -1 pad): [17, 5, 8, 13]
+    slot hop_to_gw: [1, 1, 1, 1]   own hop 0   current parent -1   current radio-1 channel 1
+    progress mask (valid & strictly closer; slot 0 forced if none): [1, 0, 0, 0]
+    route logits (prior, mask)      : [ 7.184e+00 -1.000e+09 -1.000e+09 -1.000e+09]
+    + margin 2.0 on incumbent slot : [ 7.184e+00 -1.000e+09 -1.000e+09 -1.000e+09]  argmax -> j=0 (no margin: 0)
+    chan logits (prior)             : [ 0.335  1.826 -0.529 -1.052 -1.884  0.456]
+    + margin on cur_chan 0          : [ 2.335  1.826 -0.529 -1.052 -1.884  0.456]  argmax c=0  sequential c=0
+    fallback entropy H_route+H_chan (biased) = 1.1220  (unbiased 1.2048); threshold 2.0 -> fire=False
+    executed: next_hop=-1 channels=[0, 1]
+  node 0:
+    candidate slots (link nbrs by hop asc, SNR desc, id; -1 pad): [4, 7, 14, 9]
+    slot hop_to_gw: [3, 3, 3, 4]   own hop 4   current parent 4   current radio-1 channel 1
+    progress mask (valid & strictly closer; slot 0 forced if none): [1, 1, 1, 0]
+    route logits (prior, mask)      : [ 4.039e+00 -5.518e+00  3.137e+00 -1.000e+09]
+    + margin 2.0 on incumbent slot : [ 6.039e+00 -5.518e+00  3.137e+00 -1.000e+09]  argmax -> j=0 (no margin: 0)
+    chan logits (prior)             : [-2.658 -1.802  1.208  2.387  0.561  0.104]
+    + margin on cur_chan 0          : [-0.658 -1.802  1.208  2.387  0.561  0.104]  argmax c=3  sequential c=1
+    fallback entropy H_route+H_chan (biased) = 1.3677  (unbiased 1.6857); threshold 2.0 -> fire=False
+    executed: next_hop=4 channels=[3, 2]
+  node 1:
+    candidate slots (link nbrs by hop asc, SNR desc, id; -1 pad): [2, 12, 19, -1]
+    slot hop_to_gw: [1, 2, 2, None]   own hop 2   current parent 2   current radio-1 channel 1
+    progress mask (valid & strictly closer; slot 0 forced if none): [1, 0, 0, 0]
+    route logits (prior, mask)      : [ 7.318e+00 -1.000e+09 -1.000e+09 -1.000e+09]
+    + margin 2.0 on incumbent slot : [ 9.318e+00 -1.000e+09 -1.000e+09 -1.000e+09]  argmax -> j=0 (no margin: 0)
+    chan logits (prior)             : [-3.133 -0.938  1.014  2.478  0.112 -0.033]
+    + margin on cur_chan 0          : [-1.133 -0.938  1.014  2.478  0.112 -0.033]  argmax c=3  sequential c=2
+    fallback entropy H_route+H_chan (biased) = 1.0471  (unbiased 0.9884); threshold 2.0 -> fire=False
+    executed: next_hop=2 channels=[4, 3]
+
+--- eval t=10 (is_chan_step=True) ---
+  node 10 (gateway):
+    candidate slots (link nbrs by hop asc, SNR desc, id; -1 pad): [17, 5, 8, 13]
+    slot hop_to_gw: [1, 1, 1, 1]   own hop 0   current parent -1   current radio-1 channel 1
+    progress mask (valid & strictly closer; slot 0 forced if none): [1, 0, 0, 0]
+    route logits (prior, mask)      : [ 6.915e+00 -1.000e+09 -1.000e+09 -1.000e+09]
+    + margin 2.0 on incumbent slot : [ 6.915e+00 -1.000e+09 -1.000e+09 -1.000e+09]  argmax -> j=0 (no margin: 0)
+    chan logits (prior)             : [ 2.411  1.419 -0.562 -2.955 -1.904  0.715]
+    + margin on cur_chan 0          : [ 4.411  1.419 -0.562 -2.955 -1.904  0.715]  argmax c=0  sequential c=0
+    fallback entropy H_route+H_chan (biased) = 0.3505  (unbiased 1.0472); threshold 2.0 -> fire=False
+    executed: next_hop=-1 channels=[0, 1]
+  node 0:
+    candidate slots (link nbrs by hop asc, SNR desc, id; -1 pad): [4, 7, 14, 9]
+    slot hop_to_gw: [3, 3, 3, 4]   own hop 4   current parent 4   current radio-1 channel 2
+    progress mask (valid & strictly closer; slot 0 forced if none): [1, 1, 1, 0]
+    route logits (prior, mask)      : [ 3.963e+00 -8.166e+00  4.659e+00 -1.000e+09]
+    + margin 2.0 on incumbent slot : [ 5.963e+00 -8.166e+00  4.659e+00 -1.000e+09]  argmax -> j=0 (no margin: 2)
+    chan logits (prior)             : [-1.824 -1.206  0.765  1.071  0.09   0.729]
+    + margin on cur_chan 1          : [-1.824  0.794  0.765  1.071  0.09   0.729]  argmax c=3  sequential c=1
+    fallback entropy H_route+H_chan (biased) = 2.1410  (unbiased 2.1406); threshold 2.0 -> fire=True
+    executed: next_hop=14 channels=[6, 2]
+  node 1:
+    candidate slots (link nbrs by hop asc, SNR desc, id; -1 pad): [2, 12, 19, -1]
+    slot hop_to_gw: [1, 2, 2, None]   own hop 2   current parent 2   current radio-1 channel 3
+    progress mask (valid & strictly closer; slot 0 forced if none): [1, 0, 0, 0]
+    route logits (prior, mask)      : [ 7.96e+00 -1.00e+09 -1.00e+09 -1.00e+09]
+    + margin 2.0 on incumbent slot : [ 9.96e+00 -1.00e+09 -1.00e+09 -1.00e+09]  argmax -> j=0 (no margin: 0)
+    chan logits (prior)             : [-2.278 -0.874  1.292  0.703  0.315  0.298]
+    + margin on cur_chan 2          : [-2.278 -0.874  3.292  0.703  0.315  0.298]  argmax c=2  sequential c=2
+    fallback entropy H_route+H_chan (biased) = 0.6654  (unbiased 1.4712); threshold 2.0 -> fire=False
+    executed: next_hop=2 channels=[4, 3]
+
+  S2 seed 0 summary: {'fires': 1, 'fires_chan': 1, 'decisions': 4000, 'chan_steps': 20, 'maxH_chan': 2.14095401763916, 'maxH_route': 0.5877075791358948, 'maxH_chan_m0': 2.140578031539917, 'over2_m0': 1, 'held_route': 6, 'held_chan': 131, 'seq_moved': 98, 'route_ties': 0, 'chan_ties': 0, 'fb_ko_masked': 0, 'fb_changed': 1, 'max_sum_bound': 2.8903717578961645, 'fire_at': [(10, 0, 3, 2.141)]}
+  ln4=1.386 ln6=1.792 ln24=3.178 ln2+ln6=2.485
+
+  Fallback count across suites A+B, eval seed 0 (same agent, margin 2):
+    S1: fires 1 / 4000 node-decisions  maxH(chan step, biased) 2.072  maxH(non-chan step) 0.555  maxH(chan step, margin 0) 2.220  >2 at margin 0: 6  route held by margin 14  chan held 121  seq-decoder moved 86  fallback->Ko slot outside progress mask 0  fallback changed action 0  fires (t, node, #progress slots, H) [(40, 0, 3, 2.072)]
+    S2: fires 1 / 4000 node-decisions  maxH(chan step, biased) 2.141  maxH(non-chan step) 0.588  maxH(chan step, margin 0) 2.141  >2 at margin 0: 1  route held by margin 6  chan held 131  seq-decoder moved 98  fallback->Ko slot outside progress mask 0  fallback changed action 1  fires (t, node, #progress slots, H) [(10, 0, 3, 2.141)]
+    S3: fires 1 / 4000 node-decisions  maxH(chan step, biased) 2.015  maxH(non-chan step) 0.689  maxH(chan step, margin 0) 2.117  >2 at margin 0: 4  route held by margin 42  chan held 125  seq-decoder moved 103  fallback->Ko slot outside progress mask 0  fallback changed action 0  fires (t, node, #progress slots, H) [(130, 0, 3, 2.015)]
+    S4: fires 1 / 4000 node-decisions  maxH(chan step, biased) 2.196  maxH(non-chan step) 0.632  maxH(chan step, margin 0) 2.101  >2 at margin 0: 1  route held by margin 8  chan held 130  seq-decoder moved 92  fallback->Ko slot outside progress mask 0  fallback changed action 1  fires (t, node, #progress slots, H) [(10, 0, 3, 2.196)]
+    S5: fires 2 / 4000 node-decisions  maxH(chan step, biased) 2.191  maxH(non-chan step) 0.691  maxH(chan step, margin 0) 2.161  >2 at margin 0: 3  route held by margin 15  chan held 131  seq-decoder moved 91  fallback->Ko slot outside progress mask 0  fallback changed action 1  fires (t, node, #progress slots, H) [(10, 0, 3, 2.113), (40, 0, 3, 2.191)]
+    S6: fires 1 / 3901 node-decisions  maxH(chan step, biased) 2.196  maxH(non-chan step) 0.676  maxH(chan step, margin 0) 2.101  >2 at margin 0: 1  route held by margin 7  chan held 129  seq-decoder moved 79  fallback->Ko slot outside progress mask 0  fallback changed action 1  fires (t, node, #progress slots, H) [(10, 0, 3, 2.196)]
+    B1: fires 0 / 4000 node-decisions  maxH(chan step, biased) 1.970  maxH(non-chan step) 0.689  maxH(chan step, margin 0) 2.117  >2 at margin 0: 4  route held by margin 12  chan held 129  seq-decoder moved 98  fallback->Ko slot outside progress mask 0  fallback changed action 0  fires (t, node, #progress slots, H) []
+    B2: fires 1 / 4000 node-decisions  maxH(chan step, biased) 2.152  maxH(non-chan step) 0.692  maxH(chan step, margin 0) 2.138  >2 at margin 0: 1  route held by margin 9  chan held 132  seq-decoder moved 91  fallback->Ko slot outside progress mask 0  fallback changed action 1  fires (t, node, #progress slots, H) [(10, 0, 3, 2.152)]
+    B3: fires 0 / 4000 node-decisions  maxH(chan step, biased) 1.689  maxH(non-chan step) 0.001  maxH(chan step, margin 0) 1.709  >2 at margin 0: 0  route held by margin 0  chan held 172  seq-decoder moved 100  fallback->Ko slot outside progress mask 0  fallback changed action 0  fires (t, node, #progress slots, H) []
+    B4: fires 0 / 4000 node-decisions  maxH(chan step, biased) 1.752  maxH(non-chan step) 0.008  maxH(chan step, margin 0) 1.713  >2 at margin 0: 0  route held by margin 0  chan held 140  seq-decoder moved 39  fallback->Ko slot outside progress mask 0  fallback changed action 0  fires (t, node, #progress slots, H) []
+    B5: fires 1 / 4000 node-decisions  maxH(chan step, biased) 2.058  maxH(non-chan step) 0.669  maxH(chan step, margin 0) 2.224  >2 at margin 0: 3  route held by margin 8  chan held 139  seq-decoder moved 84  fallback->Ko slot outside progress mask 0  fallback changed action 1  fires (t, node, #progress slots, H) [(30, 0, 3, 2.058)]
+    total: {'fires': 9, 'decisions': 43901, 'over2_m0': 24, 'chan_steps': 220, 'fb_changed': 6}
+
+====================================================================================================
+PART 3  TRAINING INTERACTIONS FROM runs/v10/ckpt/*.log and checkpoints
+====================================================================================================
+  ckpt\egat_nobc_s0.log    env steps 100000  episodes 500  agent-transitions 2000000  validation calls 11 x 8800 = 96800 non-learning env steps
+  ckpt\egat_noedge_s0.log  env steps 100000  episodes 500  agent-transitions 2000000  validation calls 11 x 8800 = 96800 non-learning env steps
+  ckpt\egat_nogru_s0.log   env steps 100000  episodes 500  agent-transitions 2000000  validation calls 11 x 8800 = 96800 non-learning env steps
+  ckpt\egat_noko_s0.log    env steps 100000  episodes 500  agent-transitions 2000000  validation calls 11 x 8800 = 96800 non-learning env steps
+  ckpt\egat_s0.log         env steps 100000  episodes 500  agent-transitions 2000000  validation calls 11 x 8800 = 96800 non-learning env steps
+  ckpt\li_s0.log           env steps 100000  episodes 500  agent-transitions 2000000  validation calls 11 x 8800 = 96800 non-learning env steps
+  ckpt\q_neutral_s0.log    env steps 100000  episodes 500  agent-transitions 2000000  validation calls 11 x 8800 = 96800 non-learning env steps
+  ckpt\yuan_s0.log         env steps 100000  episodes 500  agent-transitions 2000000  validation calls 11 x 8800 = 96800 non-learning env steps
+  yuan: hp {'lr': 0.001, 'gamma': 0.98, 'batch': 10, 'buffer': 10000, 'soft_tau': 0.01, 'kl_lambda': 0.03, 'eps_start': 0.6, 'eps_end': 0.05, 'eps_decay_steps': 50000, 'seed': 0, 'seq_decode': True}  steps/updates 60000
+  li: hp {'lr': 0.0001, 'lr_min': 1e-05, 'lr_decay': 0.96, 'lr_decay_every': 1000, 'gamma': 0.98, 'entropy': 0.05, 'value_coef': 0.5, 'seed': 0, 'seq_decode': True}  steps/updates 20000
+  q_neutral: alpha 0.1 gamma 0.98 eps 0.6->0.05 over 50000 steps, explore-steps 30000, table rows 901

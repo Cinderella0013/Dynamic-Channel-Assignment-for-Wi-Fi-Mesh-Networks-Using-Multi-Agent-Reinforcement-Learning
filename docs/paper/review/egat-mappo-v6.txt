@@ -1,0 +1,566 @@
+EGAT–MAPPO v6
+Revised manuscript with author responses | 10 November 2026
+
+Note on this revision (v6)
+This version applies the authors' responses to comments 5 and 7 and to the reconfiguration-count part of comment 2. It uses existing outputs only; no new simulation was run. The reconfiguration statistic is now defined from the code, every recorded value lies within its bound, and no score changes. Table 7 and two derived figures in Section 7.2 are corrected for input rounding. Comments 1, 3, 4 and 6, and the remaining items of comment 2, are still open; each inline comment now carries an authors' status line.
+
+Note to the authors (v5)
+This draft develops the EGAT–MAPPO study supplied on 9 November 2026. It keeps the original experimental values and incorporates the scientific corrections identified in the previous review. No new experiment or independent reproduction has been performed. The seven inline comments identify the remaining information needed from the authors; please resolve them before preparing a submission. In particular, the reported reconfiguration statistic must be reconciled with its definition before the associated composite scores can be treated as verified. The earlier single-hop GAT–RAES study remains separate. The prose below is written as a research article rather than as a review report.
+
+Switching-Aware Joint Channel and Parent Selection in Wi-Fi Mesh Networks with EGAT–MAPPO
+
+Wissarut Taiyawong and Chakchai So-In
+College of Computing, Khon Kaen University, Thailand
+Wissarut.t@kkumail.com; chakso@kku.ac.th
+
+Abstract
+
+Channel assignment and routing are closely coupled in multi-hop Wi-Fi mesh networks. A channel that appears favorable at one node may create congestion farther along the route, while frequent changes interrupt service even when the resulting assignments are individually attractive. We study this problem with EGAT–MAPPO, which combines a shared graph-attention encoder, channel and parent decision heads, a residual heuristic prior, and switching hysteresis. The policy is initialized from a Ko-inspired rule and trained with multi-agent proximal policy optimization. Evaluation uses a flow-level simulator calibrated against ns-3, followed by packet-level tests in three scenarios. On the exploratory topology set, mean throughput is 53.20 Mb/s, compared with 47.32 Mb/s for the adapted Ko baseline and 49.70 Mb/s for Yuan with hysteresis. On the later confirmation set, the reported composite differences are +0.246 against Ko and +0.067 against Yuan with hysteresis. The latter comparison has a reported 95% interval of [0.031, 0.102], conditional on the evaluated topologies. The results favor a feedforward policy over the earlier recurrent variant and show that part of the improvement remains when learned baselines also suppress unnecessary changes. They also reveal important limits: fairness does not improve in every comparison, and packet-level tests overlap partly with calibration. These limits define the scope of the present evidence.
+
+Keywords: wireless mesh networks; channel assignment; routing; graph attention; multi-agent reinforcement learning; switching cost.
+
+1. Introduction
+
+1.1 Motivation and research question
+
+A multi-hop wireless mesh must allocate spectrum while deciding how traffic reaches a gateway. These decisions cannot be made independently. Changing a relay's channel affects the links available to its children, and choosing a different parent changes both forwarding load and interference along a path. A short route is not necessarily a good route when a relay is already congested. Likewise, reducing local interference may provide little end-to-end benefit if the new path introduces a bottleneck elsewhere.
+
+Channel–routing interactions have long been recognized in multi-radio mesh design [11–14]. The challenge considered here is how to adapt these decisions as traffic and interference change, while accounting for the disruption caused by adaptation itself. Reconfiguration can pause transmission or affect queued traffic. A controller that repeatedly finds a better instantaneous assignment may therefore deliver less useful service than one that changes its configuration more selectively.
+
+This trade-off motivates a concrete question: can a learned controller improve service by selecting channels and parents jointly, while avoiding changes whose benefit is smaller than their operational cost? We examine that question under changing loads, moving hotspots, external interference and relay failure. The study is intended to characterize controller behavior in these conditions; deployment latency and control-message costs require separate measurements.
+
+1.2 Approach and contributions
+
+EGAT–MAPPO uses a graph encoder to represent the relationship between a node and its neighbors. Two decision heads choose a downlink channel and a parent. Channel decisions occur less frequently than route decisions, reflecting the cost assigned to reconfiguration in the model. A Ko-inspired cost provides a residual prior, and hysteresis discourages marginal changes at execution time. The actor shares parameters across nodes and is trained using MAPPO [8].
+
+The purpose of this combination is to retain a useful local heuristic while allowing the learned policy to respond to forwarding load and network context. Its value must nevertheless be assessed against alternatives that receive comparable switching controls. A large advantage over a frequently changing baseline would otherwise say little about the benefit of the learned representation. We therefore include hysteresis-enhanced versions of the learned baselines and a second switching setting in which queues are retained.
+
+The paper makes three contributions. First, it presents a switching-aware channel-and-parent controller for the stated multi-hop mesh model, including its graph representation, residual prior and execution rules. Second, it compares the complete controller with heuristic and adapted learning methods, separating raw service metrics from a composite score and examining what remains after switching controls are added. Third, it studies model simplification and transfer through an exploratory ablation, a later topology confirmation, larger networks and selected packet-level experiments. These contributions concern the integrated system and its evaluation. GATv2, MAPPO, heuristic initialization and hysteresis are established techniques, and the experiments do not isolate a benefit for every component.
+
+Table 1. Research questions, contributions and corresponding evidence.
+Research question | Contribution | Design elements | Evidence
+How can channel and parent decisions respond to network load without excessive reconfiguration? | Joint controller design | Shared graph encoder, two heads, progress mask and Ko prior | Sections 3–5; raw outcomes in Section 7.2
+Does an advantage remain when competing methods also reduce unnecessary changes? | Switching-aware comparison | Hysteresis controls and queue-preserving switching | Sections 6.3, 7.2 and 7.5
+Does the chosen model remain useful beyond the topology set used during development? | Model simplification and transfer study | GRU ablation, later topology cohort and packet-level tests | Sections 6.4–6.5 and 7.3–7.6
+
+The remainder of the paper first relates the design to prior work, then defines the model and controller. The analysis identifies two conditional properties of the execution rules and the main computational costs. The evaluation reports both favorable and unfavorable outcomes before discussing their implications.
+
+2. Related work
+
+2.1 Channel assignment, routing and reconfiguration
+
+Classical mesh systems provide the starting point for this study. Ko et al. [1] use a distributed local-cost rule for channel assignment, with channel selection separated from forwarding. Hyacinth [11] and the joint assignment-and-routing work of Alicherry et al. [12] show why channels and paths must be considered together. Capacity analysis [13] and interference-aware routing [14] further establish that a locally attractive link need not belong to the best end-to-end path.
+
+Reconfiguration disruption is also a prior concern. Ramachandran et al. [9] explicitly address flow interruption during channel reassignment, using a default-channel radio to redirect traffic while the change completes. The present work therefore does not claim that recognizing switching cost, preserving service during reassignment, or coupling channels and routes is new. It asks whether the particular learned controller improves the service–reconfiguration trade-off under the tested dynamics.
+
+Recent mesh studies sharpen that comparison. Shin et al. [16] develop conflict-aware assignment using a weighted graph and a list-coloring formulation. Sun et al. [15] study multi-agent actor–critic control for dynamic mesh topology. Tang et al. [17] examine self-coordinated topology optimization through transmit-power control, targeting delay and energy use. These studies are relevant because they address mesh interference or coordination directly. Their relevance to channel-and-parent selection depends on the precise action spaces and operating assumptions; these require a mechanism-level comparison.
+
+2.2 Graph-based learning and the choice of baselines
+
+Graph attention allows a node to aggregate information from its neighbors with learned weights [4]. GATv2 makes those attention relationships more expressive [5]. In wireless resource allocation, Yuan et al. [2] combine attention with DQN for a cognitive-radio problem, while Li et al. [3] combine GAT and A2C for resource-block and power allocation in C-V2X. These methods provide useful learning baselines, but their original tasks do not include the parent-selection action used here. Our numerical results concern mesh adaptations of those methods, not reproductions of their original published systems.
+
+PPO [6], GAE [7] and MAPPO [8] provide the optimization machinery. Their established role is to learn cooperative policies; they do not by themselves establish that a graph-based mesh controller is superior to a well-designed heuristic. That claim requires comparisons under stated information, decision and switching conditions.
+
+Table 2. Position of the study relative to representative prior work.
+Work | Original problem and approach | Relevance to EGAT–MAPPO | Comparison in this study
+Ko [1] | Distributed local-cost channel assignment in multi-radio mesh | Supplies a simple reference rule, prior and fallback | Adapted Ko baseline
+Hyacinth [11]; Alicherry et al. [12] | Multi-radio channel assignment and routing | Establish the channel–routing coupling addressed here | Related-work comparison
+Ramachandran et al. [9] | Conflict-aware assignment with traffic redirection during reassignment | Establishes earlier handling of reconfiguration disruption | Related-work comparison
+Yuan [2] | Attention and DQN for cognitive-radio channel/power allocation | Provides a graph-based value-learning alternative | Mesh adaptation, with and without hysteresis
+Li [3] | GAT–A2C for C-V2X resource-block/power allocation | Provides a recent graph-based actor–critic alternative | Mesh adaptation, with and without hysteresis
+Sun et al. [15] | Multi-agent actor–critic control of mesh topology | Closely related mesh coordination; detailed control assumptions need comparison | Literature comparison; no numerical result here
+Shin et al. [16] | Weighted-conflict-graph channel assignment | Recent model-based alternative to learned assignment | Literature comparison; no numerical result here
+Tang et al. [17] | Self-coordinated mesh topology optimization through power control | Related coordination problem with delay/energy objectives | Literature comparison; no numerical result here
+This work | Graph-conditioned channel and parent selection with switching-aware execution | Evaluates the combined design and the effect of stronger switching controls | Simulation, topology confirmation and selected ns-3 tests
+
+The task differs from the original Yuan and Li settings; comparisons with their mesh adaptations concern controller design and execution treatment. Establishing a methodological distinction from the closest mesh studies requires a fuller comparison of their actions, observations and coordination assumptions. Table 2 does not imply that every listed method solves the same problem or that an unreported feature is absent.
+
+// Please complete the full-paper comparison with [15–17], citing the pages that describe their actions, information exchange and reconfiguration rules. Explain the specific capability or design difference that remains after that comparison. If a method is close enough to challenge a retained superiority claim, add the most relevant feasible control; otherwise explain the mismatch and keep the claim within scope. Do not start a new benchmark campaign simply to lengthen this section.
+
+3. Network model and control objective
+
+3.1 Topology and radio configuration
+
+Let V be the set of nodes, |V|=n, and let G⊂V contain the gateways. The default network has 20 nodes and two gateways. Nodes are placed in a square of side 30√n m, with disconnected samples rejected in the topology generator. Additional tests use 50 and 80 nodes. Feasible links and interference relationships are represented by E_L(t) and E_I(t), respectively.
+
+The radio model uses 20 dBm transmit power, −94 dBm noise, log-distance path loss with reference loss 46.68 dB at 1 m and exponent 3. Link and interference thresholds are −76 and −82 dBm. Rates follow the stated 802.11ax, 20 MHz, single-stream MCS table, spanning 8.6–143.4 Mb/s. Each node has two radios. Its downlink radio chooses a channel from ℂ={6,11,36,40,44,48}; its uplink follows the downlink channel of its parent. The channel labels span two frequency bands, so their propagation and packet-level configuration must be specified consistently.
+
+Node i chooses a parent p_i(t) from at most four candidates, ordered by hop count and then SNR. A progress mask allows only feasible parents that are closer to a gateway under a potential φ. The analysis in Section 5 assumes that this potential is consistent across the decisions made in an epoch. Gateways and nodes with no feasible parent require separate execution rules.
+
+3.2 Traffic, service and reconfiguration
+
+Each non-gateway node generates traffic toward a gateway. Let d_f(t), q_f(t) and x_f(t) denote the offered rate, queued traffic and delivered rate of flow f. Traffic follows an on/off Markov process with state persistence 0.9; on-state rates are exponentially distributed with scenario-dependent means. A step lasts 100 ms, and an episode contains 200 steps. Reconfiguration interrupts the affected link for one step. In setting (a), affected flows also lose the queues waiting on that path; in setting (b), those queues are retained.
+
+The distinction between a controller decision and its consequences is important. Define the nominal logical changes
+
+    s_i^ctrl(t)=1{c_i(t)≠c_i(t−1)},
+    r_i^{p,ctrl}(t)=1{p_i(t)≠p_i(t−1)},
+    N_ctrl=Σ_{t,i}[s_i^ctrl(t)+r_i^{p,ctrl}(t)].
+
+These quantities count changes between consecutive recorded assignments. They need not count every radio retune induced at a child, every flow affected by a route change, or several operations occurring within one simulator step. The study's reported reconfiguration statistic, N_rep (“stability” in the outputs), counts radio retunes rather than controller decisions. Each node has an uplink and a downlink radio, and the uplink follows the parent's downlink channel. At every step the simulator counts each radio of a live node whose channel differs from the previous step, and each parent change of a traffic source:
+
+    N_rep=Σ_t[Σ_{i alive}Σ_{k∈{up,down}}1{c_{i,k}(t)≠c_{i,k}(t−1)}
+              +Σ_{i∈src}1{p_i(t)≠p_i(t−1)}].
+
+A downlink change at a relay therefore also counts once for each child whose uplink follows it, and a parent change counts once as a route change plus one uplink retune if the new parent uses a different channel. The bound is T(2n+n_src), not 2nT: 11,600 for n=20 with two gateways and 47,600 for C4. The largest recorded values, Q-neutral 8,219.9 in S4 and 34,885 in C4, lie within it. Every episode starts from the same assignment (channel pair (0,1), minimum-hop parents), so the first step counts each method's departure from that common start. All methods, including the ns-3 runs, use the same counter. The per-step terms N_sw and N_rc in (2) are the two parts of N_rep. N_ctrl remains a useful description of logical decisions but is not the reported statistic.
+
+3.3 Airtime allocation
+
+For link ℓ with offered service load y_ℓ and rate R_ℓ, the requested airtime is y_ℓ/R_ℓ. The flow-level simulator groups interfering co-channel links into domains and constrains their total airtime by η=0.65. When demand exceeds that limit, the described model reduces the service of affected flows proportionally and allows idle airtime to be reused. Overlapping domains and queue updates require a precise scheduling rule; the domain inequality alone is not a complete simulator specification.
+
+The model replaced an earlier equal-share-by-link-count approximation after comparison with ns-3 revealed overestimation on congested channels. The reported root-mean-square discrepancy decreased from 23.5% to 7.4%, with 7.0% on B1, which was excluded from fitting. Calibration improves the model's agreement in those conditions, but does not make a flow-level model equivalent to packet-level CSMA/CA.
+
+3.4 Rewards and the learning problem
+
+We formulate the design objective as discounted expected system return,
+
+    J(θ)=E_{π_θ}[Σ_{t=0}^{T−1}γ^t R_t],  γ=0.98.               (1)
+
+A Markov-sufficient simulator state must include the topology, assignments, traffic states, queues and failure status, together with throughput-window history and any scheduling phase that affects the next transition. The actor observes only the information made available to its node and graph neighborhood.
+
+The reward specification in the study is
+
+    R_t=Σ_f log(x̄_f(t)+0.01)−0.1N_sw(t)−0.05N_rc(t)
+        −0.1N_unrouted(t),                                     (2)
+
+where x̄_f is throughput averaged over one second and expressed numerically in Mb/s. N_unrouted counts flows without a route; it is distinct from the packet/byte loss rate used in evaluation. The fixed unit convention matters because changing the numerical scale inside the logarithm changes the objective unless the offset is rescaled as well.
+
+The local training signal is described by
+
+    r_i(t)=λ_t u_i(t)+(1−λ_t)R_t/n_alive(t)
+           −0.1s_i(t)−0.05r_i^p(t),                            (3)
+
+where u_i is the utility associated with flows traversing node i and n_alive is the number of live or available nodes under the implemented convention. N_sw and N_rc in (2) are the per-step terms of N_rep (Section 3.2); the mapping of the local terms in (3) is still to be stated. EGAT–MAPPO anneals λ_t from 0.5 to 0.1, whereas the learned baselines retain 0.5. The optimizer thus uses shaped local rewards. Equation (1) expresses the system objective, but equivalence between the shaped updates and maximization of that objective has not been established.
+
+// Please supply the exact model definitions from the code: the 38-index observation vector, candidate-slot encoding and normalization; queue limits and update order; progress-potential calculation; gateway/no-parent behavior; u_i, n_alive and each reward counter; and the allocation rule for overlapping interference domains. Reconcile N_rep using one complete Q-neutral S1 or S4 event ledger, including initialization, induced retunes, inner-step operations and the counting horizon, then show that EGAT and Ko use the same convention. Existing code and logs should be examined first; a small diagnostic run is needed only if those records are unavailable.
+// Authors' status, 10 Nov 2026 — PARTLY RESOLVED. N_rep is reconciled from the code (Section 3.2). Per-episode split on topologies 0–19: Ko 456.9 channel retunes + 158.6 route changes = 615.5; EGAT+H 39.5 + 2.8 = 42.2; Q-neutral 6,263.3 + 1,787.2 = 8,050.5. EGAT, Ko, Li, Yuan, Q-neutral and the ns-3 runs use the same counter. Still to supply: the indexed 38-entry observation, queue limits and update order, the potential, gateway/no-parent behaviour, u_i, n_alive, and allocation for overlapping domains.
+
+4. EGAT–MAPPO
+
+4.1 Architecture
+
+The controller represents each node with a shared graph encoder, then produces parent and channel scores through separate heads. A residual prior adjusts those scores using Ko-inspired costs. Feasibility masks, hysteresis and coordinated decoding turn the scores into an executed configuration. The resulting service and queues form the next observation. Behavior cloning provides initialization, while the centralized critic is used only during training.
+
+Figure 1. Information flow between controller components. The diagram shows functional dependencies; the training/evaluation trace must establish the exact order of execution operators.
+
+```mermaid
+flowchart TB
+  S["Network, traffic and assignments"] --> O["Node and edge features"]
+  O --> E["Shared GATv2 encoder"]
+  E --> H["Parent and channel heads"]
+  K["Ko costs and reference actions"] --> P["Residual prior and valid actions"]
+  H --> P
+  P --> X["Hysteresis, decoding and fallback"]
+  K --> X
+  X --> A["Executed configuration"]
+  A --> S
+  S --> T["Training critic and MAPPO"]
+  K --> B["Imitation initialization"]
+  T -. "updates" .-> E
+  T -. "updates" .-> H
+  B -. "initializes" .-> H
+```
+
+Table 3. Role of each controller component.
+Component | Operation | Reason for its inclusion
+Graph representation | Encodes node state and link/interference relationships | Makes neighboring demand and contention available to the policy
+GATv2 encoder | Produces a shared node embedding | Learns which neighboring information is relevant in the current context
+Parent/channel heads | Produce four parent scores and six channel scores | Represents the coupled control task with different decision frequencies
+Progress mask | Excludes parents that do not make gateway progress | Restricts the policy to the stated routing structure
+Residual Ko prior | Subtracts a scaled normalized heuristic cost | Retains a useful local preference while allowing learned corrections
+Behavior cloning and MAPPO | Initialize and optimize the actor | Provide a starting policy and cooperative learning updates
+Hysteresis and coordinated execution | Favor the incumbent and coordinate channel choices | Reduce marginal reconfiguration and avoid conflicting simultaneous choices
+
+Parameter sharing allows the same actor to be applied to different graph sizes. It does not, by itself, guarantee invariance to node labels or successful transfer. Execution also requires information exchange: two graph layers use neighbor information, and parent-to-child decoding requires coordination. Removing the centralized critic at deployment therefore does not imply communication-free control.
+
+4.2 Graph representation and encoding
+
+The architecture uses 38 node inputs: 18 entries for the node's own state and 20 for four candidate-parent slots. The described observations include load, unmet demand, backlog, gateway and activity status, hop distance, current channel and parent, and candidate feasibility, SNR, rate and load. The exact encoding is not recoverable from those names alone. In particular, 20 candidate entries imply five numerical values per slot under an equal-width layout, while the text names four candidate descriptors. An indexed feature definition is needed to resolve whether this reflects an additional feature or a multi-entry encoding.
+
+Seven edge features describe link presence, interference, SNR, rate, load, shared-channel status and previous-step delivery ratio. A linear projection maps the node input to width d=64. Two GATv2 layers, each with four 16-dimensional heads, aggregate information over link/interference neighbors and self. For one head, the attention calculation is
+
+    e_ij=aᵀ LeakyReLU(W_s h_i+W_t h_j+W_e f_ij),
+    α_ij=exp(e_ij)/Σ_{k∈N(i)∪{i}}exp(e_ik).                     (4)
+
+Attention-weighted neighbor messages are combined with the described residual connections and LayerNorm. This use of edge attributes lets the encoder distinguish, for example, a heavily loaded interfering neighbor from a lightly loaded one. It is a reasonable representation choice, but the ablation in Section 7.3 does not demonstrate a separate benefit from the edge features in the final feedforward model.
+
+4.3 Parent and channel decisions
+
+Two MLP heads map the embedding through 64→64→4 parent scores and 64→64→6 channel scores. The parent head is evaluated every step, while the channel head is evaluated every ten steps. This schedule permits faster route adaptation while limiting opportunities for channel changes. The schedule is imposed by design rather than learned.
+
+The parent mask excludes infeasible links and candidates that fail the progress condition. A failed incumbent cannot be retained merely because hysteresis favors it. A gateway has no ordinary upstream parent, and an empty candidate set requires an explicit repair or no-route rule. Those cases belong to the execution algorithm, rather than being left to an undefined softmax over invalid choices.
+
+Separate heads reduce the output dimension from CP to C+P, with C=6 and P=4. They do not remove the interaction between the decisions. During training, the factorization, valid-action masks and inactive channel steps must be reflected in the probability of the sampled decision.
+
+4.4 Residual heuristic prior
+
+Let z_i(a) be a head's learned score and c_i^Ko(a) the corresponding heuristic cost. The residual prior modifies the score as
+
+    q_i(a)=z_i(a)−κ z_K(c_i^Ko(a)),  κ=softplus(β)≥0,           (5)
+
+where z_K denotes the implemented cost normalization. The initial scale is described as one; its exact sharing across heads or contexts must follow the released implementation.
+
+For fixed valid actions a and b, a unit-temperature softmax gives
+
+    log[π(a)/π(b)]=z_i(a)−z_i(b)
+                   −κ[z_K(c(a))−z_K(c(b))].                    (6)
+
+Equation (6) explains the role of the prior: with the learned scores held fixed, a lower normalized cost increases an action's relative preference. The policy can learn a correction through its logits, but a misleading local cost can still bias training toward a congested or otherwise poor choice. The prior's value is therefore an empirical question, not a consequence of the softmax identity.
+
+4.5 Initialization and cooperative training
+
+The initial phase uses 10,000 steps of Ko-guided behavior. The described actor warm start fits parent choices by cross-entropy for at most 20 epochs, stopping at 90% agreement, while the critic is initialized using returns from the heuristic. The parent imitation loss is
+
+    L_BC(θ)=−E_{(o_i,a_i^Ko)}log π_θ^p(a_i^Ko|o_i).              (7)
+
+The teacher action must correspond to a valid parent slot. This formulation does not imply that the channel head is cloned in the same way, or that adding a prior with scale one reproduces the complete Ko controller.
+
+The subsequent optimizer is MAPPO. To state the learning quantities clearly, let I_{i,t} denote the information and valid-action context used by agent i, and u_{i,t} the sampled decision whose probability is stored. The standard per-agent PPO surrogate is
+
+    L_clip=E_{i,t}[min(ρ_{i,t} Ahat_{i,t},
+                      clip(ρ_{i,t},1−ε,1+ε)Ahat_{i,t})],
+    ρ_{i,t}=π_θ(u_{i,t}|I_{i,t})/
+            π_{θ_old}(u_{i,t}|I_{i,t}),  ε=0.2.                 (8)
+
+The critic takes the node embedding together with the mean graph embedding,
+v_{i,t}=V_ψ([h_{i,t},mean_j h_{j,t}]). With bootstrap mask b and trace-continuation mask c, a finite-rollout GAE expression is
+
+    δ_{i,t}=r_{i,t}+γ b_{i,t}v_{i,t+1}−v_{i,t},
+    Ahat_{i,t}=Σ_{l=0}^{K_t−1}(γλ_GAE)^l
+               [∏_{k=0}^{l−1}c_{i,t+k}]δ_{i,t+l},
+    λ_GAE=0.95.                                                (9)
+
+The empty product is one. At a time-limit boundary, bootstrapping and continuing a trace need not have the same convention. Equations (8)–(9) give the explanatory formulation; the stored actions, masks and returns must be checked against the implementation before they serve as its definitive specification.
+
+The stated training settings are learning rate 3×10^−4, discount 0.98, rollout length 1,000, four update epochs, minibatch size 50, entropy coefficient 0.01, value coefficient 0.5 and gradient clipping 0.5. Moving-average weights are maintained and checkpoints are assessed on validation topologies every 10,000 steps. The nominal budget is 100,000 steps; the inclusion of the initial 10,000-step phase needs to be explicit when comparing training resources.
+
+4.6 Hysteresis and coordinated execution
+
+Hysteresis adds a margin to the score of a feasible incumbent action,
+
+    q_H(a)=q(a)+m·1{a=a_old}.                                  (10)
+
+EGAT uses m=2, selected on validation from {0,0.5,1,2,3,4}. Li and Yuan use the same worst-case selection principle over {0,0.25,0.5,1,2,4,8,16}, selecting m=1. The different grids are disclosed because equal numerical margins need not have equal effects on networks with different logit scales.
+
+The described decoder processes parents before children and avoids channels already selected by interfering neighbors that have been processed. The system also falls back to Ko's action when policy entropy exceeds 2 nats after hysteresis. The probability distribution used for that entropy is consequential: separate four- and six-way categorical heads have maximum entropies log 4≈1.386 and log 6≈1.792, both below the threshold. A joint 24-action distribution, or a specified sum of head entropies, can exceed it.
+
+Training decisions and execution rules must remain distinct. Hysteresis is described as an execution-time intervention without retraining. If a sampled proposal U becomes an executed action A=g(S,U), the learning calculation must use the probability of the decision it actually models. One valid approach logs U when g is a fixed, parameter-independent transformation within the environment. Another uses the induced distribution π_exec(a|s)=Σ_{u:g(s,u)=a}π_prop(u|s), or the actual conditional probabilities of sequential masked sampling. Evaluating the base policy at a final overwritten action is not generally equivalent. If g depends on policy entropy or logits, the assumption that it is parameter-independent also needs examination.
+
+Algorithm 1. Controller operations, with the exact training/evaluation order to be confirmed from the implementation.
+1. Assemble node/edge observations and valid candidate sets for the decision epoch.
+2. Compute shared graph embeddings and the active parent/channel head scores.
+3. Apply the prior and validity masks in the implemented order.
+4. Apply the execution rules used in that phase, including any hysteresis, decoding and fallback.
+5. Resolve gateway, empty-parent and empty-channel cases, then execute the configuration.
+6. Update service, queues and observations; record logical changes, reward events and N_rep separately.
+7. During training, retain the sampled decision and its correct probability for the PPO update.
+
+// Please show one training transition and one deterministic evaluation epoch from the code, including candidate slots, prior/mask order, proposal, executed action, stored log-probability, entropy and fallback. State how an inactive channel head enters the loss, how the critic handles termination/reset, and how empty choices and teacher ties are treated. Also give each baseline's channel/parent decision clock, available observations, warm start and total training interactions. A common decoder alone does not establish identical opportunities or information. Resolve this from the implementation first; use a small boundary test only if the trace reveals a problem.
+
+5. Properties and computational cost
+
+5.1 Route progress
+
+The progress mask has a useful property when all decisions use a common potential. It does not require learning to establish that property.
+
+Proposition 1. At a fixed epoch, suppose every selected parent edge i→p_i satisfies φ_{p_i}<φ_i under the same finite potential assignment, and no later operation overrides that condition. The resulting parent graph is acyclic.
+
+Proof. A cycle i_1→i_2→…→i_k→i_1 would require a strict decrease of φ along every edge. Transitivity would then give φ_{i_1}<φ_{i_1}, a contradiction. □
+
+Acyclicity does not ensure that a chain reaches a gateway: it may end at an unavailable node or one without a feasible parent. The argument also does not apply when agents use inconsistent stale potentials. For example, two nodes can each regard the other as closer if they consult different views. The property therefore concerns the stated decision rule under consistent information, rather than an asynchronous routing guarantee.
+
+5.2 Incumbent preference
+
+Proposition 2. Suppose the incumbent is feasible, selection is deterministic argmax of (10), ties retain the incumbent, and later processing does not override the choice. A change to action a requires q(a)−q(a_old)>m.
+
+Proof. An alternative can be selected only if q_H(a)>q_H(a_old). Substitution from (10) gives q(a)>q(a_old)+m. □
+
+For example, with incumbent score 0.5 and margin 2, an alternative score of 1.9 is insufficient to trigger a change, whereas 2.6 can do so. The conclusion no longer applies if the incumbent is masked out, an action is sampled stochastically, or a decoder overrides the result. Nor does it imply monotonically fewer changes over an episode: keeping an action affects the future state and subsequent scores.
+
+5.3 Cost of the controller
+
+Let E be the number of directed graph edges including self-links, L the number of graph layers, d the total hidden width, and C and P the channel and parent output sizes. The number of attention heads is fixed, with per-head width d/H. Given graph features and precomputed node projections, a sparse GAT layer costs O(nd²+Ed), including edge projection up to the fixed input width. Thus
+
+    T_enc=O(L(nd²+Ed)).                                        (11)
+
+The two MLP heads add O(nd²+nd(C+P)). Under a decoder that sorts nodes once and scans edges using channel-used sets, its work is O(n log n+E+n(C+P)). Let T_K, T_φ and T_obs denote the costs of heuristic computation, potential/candidate updates and observation/graph construction. The resulting conditional bound is
+
+    T_exec=O(L(nd²+Ed)+nd²+nd(C+P)+n log n+E+n(C+P))
+           +T_K+T_φ+T_obs.                                    (12)
+
+This is the cost of one forward/decoding invocation, not a measured execution deadline. Episode cost depends on when embeddings are recomputed or cached. T_obs can be quadratic if all node pairs are examined, even when the retained graph is sparse. A BFS potential on an unweighted graph would cost O(n+|E_L|), but that bound cannot be assigned to a different routing routine merely because both produce parent candidates.
+
+With fixed layer/head counts, sparse feature and activation storage is O(nd+E(d+7)+n(C+P)), apart from model weights. Shared projection/head weights contribute O(Ld²+38d+7Ld+d(C+P)), plus any separate prior and training critic. The supplied architecture depicts an n×n×7 edge tensor; materializing such a tensor requires quadratic storage regardless of the number of useful edges. Dense attention can similarly require O(Ln²d) activations. Parameter sharing therefore makes varying graph size possible, but does not establish near-linear runtime for the current code.
+
+For B graph transitions and K update passes, a coarse encoder/actor training term is O(KB[L(nd²+Ed)+nd²+nd(C+P)]), with critic, optimizer and simulator costs added separately. Two graph layers entail two aggregation dependencies, not necessarily two physical message rounds: neighbor discovery, potential dissemination and sequential decoding can require further communication.
+
+// Please check these bounds against the actual tensors and routines: sparse or dense edges, cost normalization, potential updates, decoder ordering and encoder caching. If the paper retains a real-time or deployment-scalability claim, provide inference latency, peak memory and communication measurements for 20/50/80 nodes on named hardware. Otherwise retain the analytical bounds and the stated absence of deployment measurements; another experiment is not needed just to make this section longer.
+
+6. Experimental methodology
+
+6.1 Evaluation questions
+
+The evaluation examines four aspects of the design: performance of the complete controller, the advantage remaining after switching controls are added to competing methods, the evidence for simplifying the architecture, and transfer beyond the topology cohort used during development. These questions determine the scenarios and controls. They do not require a separate experiment for every implementation detail.
+
+All topologies and traffic are generated in simulation. The default mean-load setting is 6 Mb/s per non-gateway node unless a scenario changes it; the precise on-state versus time-averaged convention must follow the traffic generator. S1–S6 and B1–B5 form the eleven-scenario A+B set. C1–C5 test additional load, size and gateway conditions.
+
+Table 4. Scenarios and the behavior each is intended to test.
+ID | Source-described change | Question stressed
+S1 | low load 2 Mb/s | avoid needless changes when capacity is ample
+S2 | high load 10 Mb/s | channel/route competition under congestion
+S3 | hotspot near one gateway, 3×demand | uneven relay/gateway pressure
+S4 | external interference on one channel, steps 50–150 | changing spectrum opportunity
+S5 | half the nodes increase load 3× at step 100 | adaptation after a demand shift
+S6 | highest-degree relay fails at step 100 | parent feasibility and route recovery
+B1 | moving hotspot every 40 steps | repeated nonstationarity
+B2 | periodic multiplier 1+0.8 sin(2πt/60) | cyclic demand adaptation
+B3 | sparse topology; square side 37.5√n in parameter description | restricted alternative parents
+B4 | previously unseen grid; spacing 35 m in parameter description | structural distribution shift
+B5 | high-load group switches every 25 steps | frequent demand changes
+C1 | very light load 1 Mb/s | benefit ceiling and unnecessary-control risk
+C2 | static traffic | adaptation when temporal variation is absent
+C3/C4 | 50/80 nodes, load 10 Mb/s | size transfer and congestion
+C5 | 4 gateways | gateway diversity and lower bottleneck pressure
+
+The parameter description defines the sparse B3 layout by square side 37.5√n, while a shorter scenario caption uses an abbreviated distance description. The configuration should resolve that difference. A 20-second episode characterizes behavior over that horizon, rather than long-term network stability.
+
+6.2 Baselines and comparison conditions
+
+M0 uses fixed channels and minimum-hop route initialization. The adapted Ko method combines a local channel cost with Bellman–Ford routing using link cost (1+load fraction)/rate. The described parent rule changes parent when the new cost is below 0.9 of the incumbent cost. It is a mesh adaptation, not an unmodified reproduction of the 2007 implementation.
+
+Q-neutral is an in-house tabular-Q interpretation. Yuan and Li preserve their respective attention/DQN and GAT/A2C learning families while adapting the actions to channel and parent selection. The learned methods use the described sequential decoder. Each is trained with five seeds and evaluated on twenty topologies per scenario; M0 and Ko are evaluated as deterministic methods on those topologies. The resulting 5×20 evaluations are not one hundred independently trained models.
+
+Li+H and Yuan+H receive validation-selected hysteresis. This controls an important source of advantage, but other differences remain: reward schedule, prior, initialization, fallback, decision opportunities and training resource use. These differences are legitimate parts of a system comparison when disclosed; they prevent attributing the whole result to the encoder or optimizer alone. Likewise, the absence of Ko+H leaves a limit on what can be said about improvement over an equally switching-controlled heuristic.
+
+6.3 Metrics and aggregation
+
+We report aggregate throughput T, Jain fairness J, fifth-percentile flow throughput P5, loss rate L and the reported reconfiguration statistic N_rep. Throughput and P5 are in Mb/s. For a method M and reference R with positive higher-is-better reference values, the relative terms are
+
+    d_T=(T_M−T_R)/T_R,
+    d_J=(J_M−J_R)/J_R,
+    d_P=(P5_M−P5_R)/P5_R,
+    d_L=(L_R−L_M)/max(L_R,0.01),
+    d_N=(N_R−N_M)/(N_R+1),                                    (13)
+
+where N denotes N_rep, not the nominal N_ctrl. With each term clipped to [−1,1], the composite is
+
+    S(M;R)=0.25clip(d_T)+0.20clip(d_J)+0.20clip(d_P)
+           +0.20clip(d_L)+0.15clip(d_N).                        (14)
+
+A score of +0.10 is ten points on the displayed 100×composite scale, not a 10% throughput improvement. The score is reference-dependent, and clipping limits the contribution of very large relative gains. Raw metric tables are needed to show trade-offs that a single score conceals.
+
+The order of aggregation matters. Scoring pooled metric means, averaging scores calculated for individual runs, and averaging scores formed from pairs of training-seed means are different estimands. Tables 5 and 9 carry the source's seed-pair scores, whereas Table 7 decomposes mean-metric scores. Their differences should not be interpreted as arithmetic error without examining the generating code, but neither should one estimator be substituted for another when checking a threshold.
+
+The flow population for Jain, zero-demand treatment, P5 interpolation, loss denominator and end-of-run queue treatment also need to be fixed. Q-neutral's mean P5 is exactly zero in every A+B scenario. For a higher-is-better metric with a zero reference, the term is 0 if the method's value is also 0 and +1 otherwise. Loss uses max(L_R,0.01) and N_rep uses N_R+1; no other epsilon is applied.
+
+6.4 Development, confirmation and uncertainty
+
+Validation topologies 1000–1003 are used for checkpoint and margin selection. Topologies 0–19 were inspected during development, including the ablation that motivated removing the GRU. They are therefore exploratory. Topologies 20–39 provide another reported set, but had previously been evaluated with the recurrent model. The later confirmation uses topologies 40–59 and training seeds 0–4; seeds 0–2 reuse ablation checkpoints. This is a fresh-topology check conditional on those trained models, not a fresh-training-seed confirmation.
+
+The thesis identifies a confirmation protocol dated 7 November 2026. Its first rule requires a point estimate of at least +0.05 against Yuan+H and an interval lower bound above zero. The second requires positive lower bounds against the other listed baselines. The third checks the original four criteria: a mean composite of at least +0.10 against each original comparator; positive results in at least 60% of scenarios under the stated Holm-adjusted tests; no Ko-relative scenario score below −0.05; and retention of the first criterion when each weight is varied individually by ×0.5 or ×1.5 and the weights are renormalized. The added H-controls are not part of that original +0.10 requirement. These are the study's decision criteria, rather than universal standards of adequacy. The dated protocol must be supported by its pre-evaluation history before the set can be described as a verified confirmation.
+
+The reports describe Welch–Satterthwaite intervals for variation across training seeds, conditional on the evaluated topology cohort. Each pair (our seed i, reference seed j) gives a score from metrics averaged over that pair's topologies, formed by (13)–(14) and averaged over scenarios with equal weight. With the resulting 5×5 matrix, the half-width is t_{0.975,df}√(var(row means)/5+var(column means)/5), with Welch–Satterthwaite df; for the deterministic references the column term is zero and df=4. The 25 pairs formed by two sets of five trained models share seeds and are not 25 independent training runs. Deterministic-reference outputs also do not become independent replicates when reused across those comparisons. The stated intervals exclude topology-sampling variability. Per-scenario Wilcoxon/bootstrap tests omit training-seed variability and are treated here as exploratory diagnostics. Unless a simultaneous procedure is documented, the individual 95% intervals are not a joint 95% guarantee across all comparisons.
+
+// Please reconstruct the key Ko, Yuan+H and ns-3 comparisons from the full-precision outputs. State the zero-reference rule and the exact order of topology averaging, ratios, clipping, scenario weighting and seed-pair averaging, then provide the interval calculation with its dependence assumptions. Reconcile N_rep first; if its definition changes, update every affected score and headline. Use existing outputs for the reanalysis. New simulations are needed only if the records cannot support the claim the paper intends to retain.
+// Authors' status, 10 Nov 2026 — RESOLVED. Reconstructed from full-precision outputs without reruns (docs/paper/review/reconstruct_tables.py). Order: per-episode metrics → seed-pair means over topologies → ratios (13) → clip → weights (14) → equal-weight scenario mean → mean of the 5×5 seed matrix. Zero-reference rule in Section 6.3, interval in Section 6.4. Key values: vs Ko, 40–59, +0.245951 [+0.215532, +0.276371]; vs Yuan+H, 40–59, +0.066841 [+0.031338, +0.102345]; ns-3 RTS/CTS vs Yuan+H +0.164388 [+0.003731, +0.325044]. The N_rep reconciliation changes no score.
+
+6.5 Packet-level comparison
+
+The packet-level experiments use the stated ns-3.47, 802.11ax, 20 MHz and A-MPDU configuration. Policies are evaluated without additional policy training in S2, B1 and B3 on topologies 0–4, with and without RTS/CTS. Calibration uses S2 and B3; B1 is excluded from fitting. The comparison therefore includes both overlap with calibration and one scenario held out from fitting. It also reuses development topologies.
+
+The simulator column in Table 9 covers twenty topologies, while each ns-3 column covers five. Differences between those columns are not automatically paired calibration errors. Similarly, the limited packet-level study cannot establish agreement across all sixteen scenarios. It provides a second view of selected congested conditions and helps identify where the flow model remains optimistic or pessimistic.
+
+Hysteresis, the uncertainty calculation, the airtime model and GRU removal were revised after inspecting earlier results. Those decisions are part of the study history. Their disclosure is important because the later confirmation is intended to address model selection, not erase it.
+
+// Please provide one versioned supplement containing the exact code, configuration, model checkpoints, environment/build records, full-precision outputs and dated protocol history. Include the training/validation/calibration/test seed map, settings (a)/(b), the three-seed ablation and both ns-3 MAC settings, with commands that regenerate the tables. This is a request for the existing study records, not a request to retrain every model. The private repository listed in the README was not accessible during this review, so access or an archive is still needed.
+
+7. Results
+
+The tables retain the numerical results supplied for the study. Percent-style composite displays have been converted to decimal scores consistently; this does not turn documentary agreement into independent reproduction. Sections 7.1–7.6 interpret those results within the metric and uncertainty qualifications above.
+
+7.1 Composite comparisons
+
+Table 5. Composite scores on exploratory and later confirmation topologies, setting (a), A+B. Brackets show the reported 95% training-seed intervals conditional on the topology cohort.
+Reference | Exploratory 0–19 | Confirmation 40–59
+Ko | +0.260[+0.230, +0.290] | +0.246[+0.216, +0.276]
+Li | +0.203[+0.069, +0.337] | +0.179[+0.033, +0.324]
+Yuan | +0.241[+0.201, +0.282] | +0.248[+0.214, +0.282]
+M0 | +0.311[+0.291, +0.331] | +0.316[+0.300, +0.332]
+Q-neutral | +0.736[+0.726, +0.746] | +0.737[+0.726, +0.749]
+Li+H | +0.133[+0.099, +0.167] | +0.107[+0.075, +0.140]
+Yuan+H | +0.085[+0.043, +0.128] | +0.067[+0.031, +0.102]
+
+The point estimates exceed +0.10 against the original comparators on the confirmation set. They decrease when the learned baselines receive hysteresis: the scores are +0.107 against Li+H and +0.067 against Yuan+H. The latter interval, [0.031,0.102], is consistent with a positive conditional difference under the reported analysis. Its lower bound is below +0.05, however, so the result does not establish a minimum effect above that level. Similarly, Li's point estimate exceeds +0.10 while its lower bound is only +0.033.
+
+The manuscript reports that the confirmation criteria pass, including a minimum Ko-relative scenario score of +0.132 and a minimum weight-perturbed Ko-relative score of +0.191. The corresponding confirmation output must accompany the protocol record. The +0.10 criterion is not met against Yuan+H and is not extended to it retrospectively.
+
+7.2 Service metrics and reconfiguration
+
+Table 6. Mean raw outcomes on topologies 0–19, setting (a), A+B. Lower loss and N_rep are preferred by the score; N_rep is defined in Section 3.2.
+Method | Throughput (Mb/s) | Jain | P5 (Mb/s) | Loss | N_rep (per episode)
+M0 | 26.87 | 0.893 | 0.858 | 0.516 | 0.2
+Ko | 47.32 | 0.777 | 1.410 | 0.248 | 615.5
+Li | 47.06 | 0.790 | 1.220 | 0.245 | 169.1
+Yuan | 49.38 | 0.767 | 1.296 | 0.221 | 351.5
+Li+H | 47.00 | 0.802 | 1.278 | 0.244 | 43.3
+Yuan+H | 49.70 | 0.787 | 1.362 | 0.213 | 43.3
+EGAT+H | 53.20 | 0.786 | 1.533 | 0.172 | 42.2
+
+Mean throughput increases from 47.32 Mb/s for Ko to 53.20 Mb/s for EGAT+H, a 12.43% difference calculated from the displayed means. Against Yuan+H, the corresponding difference is 7.04%. P5 increases from 1.362 to 1.533 Mb/s, or 12.56%, and loss decreases from 0.213 to 0.172, a 19.25% relative reduction. These are descriptive ratios of aggregate means, not paired-effect confidence intervals.
+
+The table also shows the trade-off. Jain fairness is 0.786 for EGAT+H, slightly below Yuan+H's 0.787 and below Li+H's 0.802. The controller therefore improves several service endpoints without dominating every endpoint. M0 has high Jain fairness despite much lower aggregate service, illustrating why fairness should be read together with throughput rather than in isolation.
+
+The reported N_rep means are 42.2 for EGAT+H and 615.5 for Ko. Their ratio corresponds to a 93.14% decrease in radio retunes plus parent changes as defined in Section 3.2 (Ko: 456.9 retunes and 158.6 parent changes per episode; EGAT+H: 39.5 and 2.8). These are simulated events, not measured hardware switching time. Q-neutral's very low service also makes it a weak reference; its high N_rep is not, by itself, evidence of why it performs poorly.
+
+Table 7. Contributions of individual terms to the mean-metric composite on the exploratory set. Values are recomputed from full-precision outputs; this aggregation differs from Table 5.
+Reference | Throughput | Jain | P5 | Loss | N_rep term | Total
+Ko | +0.028 | +0.002 | +0.017 | +0.073 | +0.139 | +0.260
+Li | +0.030 | −0.001 | +0.050 | +0.073 | +0.107 | +0.258
+Yuan | +0.018 | +0.005 | +0.035 | +0.060 | +0.126 | +0.244
+Li+H | +0.030 | −0.004 | +0.039 | +0.068 | +0.003 | +0.136
+Yuan+H | +0.016 | approximately 0 | +0.024 | +0.049 | +0.004 | +0.093
+
+The N_rep term contributes 0.139 of the 0.260 Ko-relative total, 53.3% on this decomposition. The remaining 0.122 is on the original weighted scale; it is not a renormalized four-metric score. Against Li+H and Yuan+H, the reconfiguration term is small, and most of the difference comes from loss, P5 and throughput. This supports examining service quality after switching controls are added, although the complete system still differs in its prior, training and execution rules.
+
+7.3 Ablation and the feedforward model
+
+Table 8. Three-seed exploratory ablation around the earlier GRU model, with margin 2. All direct intervals against that GRU reference span zero in the supplied analysis.
+Variant | Score vs Ko | Score vs Yuan+H | Score vs full GRU
+Full GRU | +0.226 | +0.006 | reference
+No edge features | +0.249 | +0.044 | +0.030
+No GRU (final model) | +0.260 | +0.087 | +0.070
+No Ko prior | +0.173 | −0.019 | −0.046
+No behavior cloning | +0.220 | +0.014 | +0.001
+
+Removing the prior gives the largest negative point estimate relative to the GRU reference, but the uncertain contrast does not establish necessity. Removing edge features gives a higher point estimate, while removing behavior cloning changes little. These tests do not isolate the same component deletions from the final GRU-free model, so they cannot establish the independent value of those components in that architecture.
+
+Removing recurrence gives a simpler policy and a positive exploratory point estimate. The later five-seed comparison on topologies 40–59 reports a score of +0.049 [0.007,0.091] relative to the GRU model. This is the strongest reported support for choosing the feedforward variant. It does not imply that memory is harmful in general; the tested observations and traffic dynamics may already supply enough information for the selected policy.
+
+7.4 Larger networks
+
+At 50 and 80 nodes, the reported Ko-relative composites are +0.465 and +0.469. These are composite differences, not throughput improvements of 46.5% and 46.9%. The raw results are less reassuring about absolute service: EGAT's loss rates are about 0.656 and 0.776 in C3 and C4, with throughputs near 73.6 and 71.0 Mb/s. A large advantage over a reference can therefore coexist with severe congestion.
+
+The size tests show that the policy can be applied to these larger simulated graphs. They do not demonstrate adequate QoS at the higher offered load or acceptable inference and communication cost. More nodes also change the scale of raw reconfiguration totals, reinforcing the need to interpret those counts with their event and network-size definitions.
+
+7.5 Queue preservation and score weights
+
+When queues are retained during changes, the reported Ko-relative score is +0.257 [0.224,0.290] on topologies 0–19 and +0.243 [0.211,0.276] on confirmation. The confirmation comparison with Yuan+H is +0.065 [0.028,0.101]. A positive difference under both queue assumptions suggests that the observed ranking is not solely a consequence of discarding queues, while leaving the physical implementation of queue preservation outside the evidence.
+
+The exploratory mean-metric sensitivity analysis changes one weight at a time by ×0.5 or ×1.5 and renormalizes. Ko-relative scores range from +0.206 to +0.307, and Yuan+H-relative scores from +0.076 to +0.107. The direction remains positive for those perturbations, but the +0.10 target is not robust against Yuan+H. This is a limited sensitivity test rather than an exhaustive search over scoring preferences.
+
+7.6 Packet-level outcomes
+
+Table 9. Reported composite scores in S2/B1/B3. The simulator uses twenty topologies and ns-3 uses five. Missing intervals are left unfilled.
+Reference | Simulator | ns-3 RTS/CTS | ns-3 without RTS/CTS
+Ko | +0.291[+0.263, +0.320] | +0.231[+0.155, +0.307] | +0.218[+0.144, +0.292]
+Li | +0.246[+0.087, +0.404] | +0.437[+0.351, +0.522] | +0.461[+0.379, +0.543]
+Yuan | +0.278[+0.228, +0.328] | +0.364[+0.223, +0.504] | +0.372[+0.226, +0.519]
+M0 | +0.363 | +0.526 | +0.555
+Li+H | +0.165[+0.123, +0.207] | +0.365[+0.322, +0.408] | +0.395[+0.357, +0.434]
+Yuan+H | +0.090[+0.046, +0.133] | +0.164[+0.004, +0.325] | +0.184[+0.021, +0.346]
+
+The reported composite differences remain positive under both MAC settings, including against the hysteresis controls. Raw outcomes show where that conclusion needs qualification. With RTS/CTS in S2, EGAT throughput is 68.063 Mb/s versus Ko's 67.101 Mb/s, but Ko has higher Jain fairness, 0.722 versus 0.693, and higher P5, 1.318 versus 1.292 Mb/s. Without RTS/CTS in S2, Ko also has higher throughput: 66.355 versus 63.816 Mb/s.
+
+The lower RTS/CTS interval bound against Yuan+H is only +0.004. Together with the small topology set and calibration overlap, this supports a narrow interpretation: the packet-level results are consistent with the reported composite advantage in selected conditions, rather than establishing superiority across all conditions or metrics.
+
+7.7 What the results explain
+
+The most consistent pattern is that service improves while the complete policy avoids the very high reported reconfiguration levels of some baselines. Adding hysteresis to Li and Yuan reduces the margin, which confirms that execution control is part of the explanation. A residual advantage remains in the reported service metrics and composite scores, but it belongs to the integrated controller rather than uniquely to graph attention or MAPPO.
+
+The model-simplification result is also useful. A recurrent layer adds computation and state without a demonstrated benefit in this evaluation, and the later comparison favors its removal. By contrast, the available ablations do not establish separate gains from edge features or imitation. A clear account of those negative or uncertain findings makes the design easier to assess than attributing every gain to every module.
+
+Table 10. Scope of the experimental evidence.
+Question | What the current study provides | Main limitation
+Performance against selected references | Raw outcomes and conditional composite comparisons | References are task adaptations
+Effect of switching controls | Li+H, Yuan+H and queue-preserving settings | No matched Ko+H result; remaining gain is not architecture-only
+Choice of recurrent versus feedforward policy | Exploratory ablation and later five-seed comparison | Component deletions are around the earlier GRU reference
+Transfer beyond the development cohort | Later topology set and 50/80-node tests | Existing trained models; high-load service and deployment cost remain limited
+Agreement with packet-level simulation | Three scenarios, two MAC settings and five topologies | Calibration overlap and development-topology reuse
+
+A reanalysis whose interval spans zero would remove evidence of a statistically established positive difference under that analysis, rather than prove that the true effect is zero. A simpler controller with similar service and lower cost would challenge the practical value of the added complexity. These are useful tests of the conclusion. If existing records support the stated comparisons after reconstruction, there is no reason to redesign the system merely to add further experiments.
+
+// Please regenerate Tables 5–9 from the recorded outputs and attach the run/configuration used for each table. Explain the 0.093 value in the standalone Yuan+H summary versus 0.094 in the DOCX decomposition, rather than choosing a correction without evidence. Keep the unfavorable fairness, high-load loss and S2 Ko results. If corrected event accounting or statistics changes an outcome, update the abstract, conclusions and comparisons together. Existing-output reconstruction comes before any new run.
+// Authors' status, 10 Nov 2026 — RESOLVED. Tables 5–9 regenerated at six decimals with the run, commit, overrides and margins of each table (docs/paper/review/reconstruct_tables.out.md). Tables 5, 6, 8 and 9 match v5. Table 7 is corrected above: the DOCX decomposition recomputed terms from per-metric means already rounded to three decimals, which gave +0.093741 (0.094); the full-precision pooled composite is +0.092766 (0.093). The unfavourable fairness, C3/C4 loss, ns-3 S2 and Yuan+H lower-bound results are kept. No outcome changes, so the abstract and conclusions are unaffected.
+
+8. Discussion and limitations
+
+8.1 Contribution and practical interpretation
+
+The contribution is a coordinated design for joint channel and parent selection, together with an evaluation that makes switching assumptions visible. Its practical question is not whether graph attention, PPO or hysteresis exists, but whether their use in this control problem produces a useful service–reconfiguration trade-off. The raw throughput, loss and P5 outcomes provide the clearest evidence of that trade-off. The composite offers a compact comparison; its reconfiguration term counts simulated radio retunes and parent changes as defined in Section 3.2.
+
+The current comparisons also leave room for a simpler explanation. Different reward schedules, priors, initialization and decision opportunities can affect the outcome even when two methods use the same decoder. A matched simple controller that performs similarly would reduce the case for the additional learning machinery. Conversely, a consistent residual advantage over such a controller would strengthen it. The closest mesh literature must be compared at this mechanism level before the final novelty statement is fixed.
+
+8.2 Validity of the evaluation
+
+The evidence is simulation-centered. Generated traffic and topology changes make it possible to isolate difficult conditions, but they are not a measured distribution of deployed networks. The flow model was changed after discrepancies with ns-3 were observed, and S2/B3 are used in calibration as well as packet-level comparison. Only B1 is held out from fitting at the scenario level. The later topology set helps address selection on earlier topologies, conditional on the models already trained.
+
+The uncertainty analysis is similarly conditional. Five training seeds expose some variation in learning, but the reported intervals omit topology-sampling uncertainty, and the exploratory per-scenario tests omit training-seed variation. These choices limit generalization claims. They also make it important to reconstruct the exact estimator instead of treating every seed–topology combination as an independent replicate.
+
+Finally, the reconfiguration statistic counts simulated radio retunes and parent changes, each charged one step of interruption. Its reduction is a modelled quantity; the physical cost of a retune depends on hardware switching delay, which this study does not measure.
+
+8.3 Reproducibility and deployment scope
+
+The material available for this revision includes the manuscript, architecture figure and summary reports. The exact source snapshot, full run records and protocol history have not yet been independently checked. Reproduction therefore remains a task for the completed supplement. It should make the model, checkpoints, seeds, metric calculations and table-generation commands traceable without reconstructing undocumented choices.
+
+The study also does not measure radio reconfiguration on hardware, coordination-message cost or wall-clock inference deadlines. Analytical complexity and larger simulated graphs do not substitute for those measurements. No claim of starvation freedom, bounded delay or fault-tolerant asynchronous routing follows from the conditional properties proved in Section 5.
+
+9. Conclusion
+
+EGAT–MAPPO combines graph-based observations, a heuristic residual prior, cooperative training and switching-aware execution for joint channel and parent selection. The reported experiments show higher aggregate throughput and lower loss than selected adapted references, with a smaller positive composite difference against learned baselines that also use hysteresis. They favor the feedforward variant over the earlier recurrent model, while leaving the separate benefits of edge features and imitation uncertain. Packet-level experiments support the same broad direction in selected conditions but include raw-metric exceptions. The resulting contribution is an integrated controller study within a defined simulation setting. The reconfiguration accounting and the reported statistics have been reconstructed from the study records without changing any outcome. The closest-work comparison, execution trace, cost measurements and supplement remain to be completed.
+
+REFERENCES
+
+[1] B.-J. Ko, V. Misra, J. Padhye, and D. Rubenstein, “Distributed Channel Assignment in Multi-Radio 802.11 Mesh Networks,” IEEE WCNC, pp. 3978–3983, 2007. doi:10.1109/WCNC.2007.727.
+https://www.microsoft.com/en-us/research/publication/distributed-channel-assignment-multi-radio-802-11-mesh-networks/
+
+[2] S. Yuan, Y. Zhang, T. Ma, Z. Cheng, and D. Guo, “Graph convolutional reinforcement learning for resource allocation in hybrid overlay–underlay cognitive radio network with network slicing,” IET Communications, vol. 17, no. 2, pp. 215–227, 2023 (first online 27 October 2022). doi:10.1049/cmu2.12527.
+https://doi.org/10.1049/cmu2.12527
+
+[3] Z. Li, G. Li, Z. Wu, W. Zhang, and A. Bazzi, “Dynamic Allocation of C-V2X Communication Resources Based on Graph Attention Network and Deep Reinforcement Learning,” Sensors, vol. 25, no. 16, 5209, 2025. doi:10.3390/s25165209.
+https://www.mdpi.com/1424-8220/25/16/5209
+
+[4] P. Veličković et al., “Graph Attention Networks,” ICLR, 2018.
+https://arxiv.org/abs/1710.10903
+
+[5] S. Brody, U. Alon, and E. Yahav, “How Attentive are Graph Attention Networks?,” ICLR, 2022.
+https://openreview.net/forum?id=F72ximsx7C1
+
+[6] J. Schulman, F. Wolski, P. Dhariwal, A. Radford, and O. Klimov, “Proximal Policy Optimization Algorithms,” arXiv:1707.06347, 2017.
+https://arxiv.org/abs/1707.06347
+
+[7] J. Schulman, P. Moritz, S. Levine, M. Jordan, and P. Abbeel, “High-Dimensional Continuous Control Using Generalized Advantage Estimation,” ICLR, 2016.
+https://arxiv.org/abs/1506.02438
+
+[8] C. Yu, A. Velu, E. Vinitsky, J. Gao, Y. Wang, A. Bayen, and Y. Wu, “The Surprising Effectiveness of PPO in Cooperative Multi-Agent Games,” NeurIPS, Datasets and Benchmarks, 2022.
+https://papers.neurips.cc/paper_files/paper/2022/hash/9c1535a02f0ce079433344e14d910597-Abstract-Datasets_and_Benchmarks.html
+
+[9] K. N. Ramachandran, E. M. Belding, K. C. Almeroth, and M. M. Buddhikot, “Interference-Aware Channel Assignment in Multi-Radio Wireless Mesh Networks,” IEEE INFOCOM, 2006. doi:10.1109/INFOCOM.2006.177.
+https://sites.cs.ucsb.edu/~almeroth/papers/128.pdf
+
+[10] ns-3 Project, “ns-3 Manual,” simulator documentation. The student reports ns-3.47; the exact release/build must be pinned in the supplement.
+https://www.nsnam.org/docs/manual/html/index.html
+
+[11] A. Raniwala and T. Chiueh, “Architecture and Algorithms for an IEEE 802.11-Based Multi-Channel Wireless Mesh Network,” IEEE INFOCOM, 2005.
+
+[12] M. Alicherry, R. Bhatia, and L. Li, “Joint Channel Assignment and Routing for Throughput Optimization in Multi-radio Wireless Mesh Networks,” ACM MobiCom, 2005. doi:10.1145/1080829.1080836.
+
+[13] M. Kodialam and T. Nandagopal, “Characterizing the Capacity Region in Multi-Radio Multi-Channel Wireless Mesh Networks,” ACM MobiCom, 2005.
+
+[14] R. Draves, J. Padhye, and B. Zill, “Routing in Multi-Radio, Multi-Hop Wireless Mesh Networks,” ACM MobiCom, pp. 114–128, 2004. doi:10.1145/1023720.1023732.
+https://www.microsoft.com/en-us/research/wp-content/uploads/2004/09/multiradio.pdf
+
+[15] W. Sun, Q. Lv, Y. Xiao, Z. Liu, Q. Tang, Q. Li, and D. Mu, “Multi-Agent Reinforcement Learning for Dynamic Topology Optimization of Mesh Wireless Networks,” IEEE Transactions on Wireless Communications, vol. 23, no. 9, pp. 10501–10513, 2024. doi:10.1109/TWC.2024.3372694.
+https://dblp.org/rec/journals/twc/SunLXLTLM24
+
+[16] D. Shin, C. Lee, and S. Choi, “A Conflict-Aware Channel Assignment in Multi-Radio Multi-Channel Wireless Mesh Networks,” IEEE Access, vol. 12, pp. 14751–14763, 2024. doi:10.1109/ACCESS.2024.3357142.
+https://pure.kaist.ac.kr/en/publications/a-conflict-aware-channel-assignment-in-multi-radio-multi-channel-/
+
+[17] Q. Tang, W. Sun, Z. Liu, Q. Li, and X. Yuan, “Multi-agent reinforcement learning based dynamic self-coordinated topology optimization for wireless mesh networks,” Journal of Network and Computer Applications, vol. 239, 104177, 2025. doi:10.1016/j.jnca.2025.104177.
+https://www.sciencedirect.com/science/article/abs/pii/S1084804525000748
+
+
+For completion before submission
+
+Status at v6: comments 5 and 7 and the N_rep part of comment 2 are resolved from existing records. Comments 1, 3, 4 and 6 and the rest of comment 2 remain open.
+
+The inline comments ask for three connected pieces of work: provide the existing code/results/protocol package; reconstruct event counts, scores and uncertainty; and finish the method and closest-work comparison from those sources. Begin with the available records. A new diagnostic or comparative run is needed only when those records reveal a specific unresolved claim. The numerical tables in this revision have been preserved from the supplied study; improved prose is not evidence that the underlying experiments have been independently reproduced.
