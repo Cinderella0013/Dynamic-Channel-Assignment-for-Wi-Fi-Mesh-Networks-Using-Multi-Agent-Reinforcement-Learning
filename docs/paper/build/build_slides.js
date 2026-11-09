@@ -1,4 +1,4 @@
-// Build the re-presentation deck: node docs/paper/build/build_slides.js OUT.pptx
+// Build the re-presentation deck: node docs/paper/build/build_slides.js OUT.pptx [SCRIPT.md]
 // Needs pptxgenjs (npm). Numbers come from docs/paper/build/thesis_content.py (v10, EGAT without GRU, margin 2).
 // Story: how the result moved from "win that spans zero" to "clear win", then each baseline's results and how we beat them.
 const pptxgen = require("pptxgenjs");
@@ -49,6 +49,21 @@ function table(s, rows, o, hlRows) {
   }));
   s.addTable(body, Object.assign({ x: 0.45, w: 9.1 }, o));
 }
+// Speaker notes = the speaking script (docs/paper/deliverables/NW14_Script_*.md, section "## สไลด์ N"), shown in Presenter View.
+const fs = require("fs");
+const SCRIPT = process.argv[3] || path.join(__dirname, "..", "deliverables", "NW14_Script_EGAT_20261108.md");
+const NOTES = {};
+fs.readFileSync(SCRIPT, "utf8").split(/^## /m).forEach((sec) => {
+  const m = sec.match(/^สไลด์ (\d+)/);
+  if (!m) return;
+  NOTES[+m[1]] = sec.split("\n").slice(1)
+    .filter((l) => !/^\|[-| ]+\|$/.test(l) && l.trim() !== "---")
+    .map((l) => l.startsWith("|") ? l.split("|").slice(1, -1).map((c) => c.trim()).join("   ") : l)
+    .map((l) => l.replace(/\*\*/g, "").replace(/^(\s*)- /, "$1• "))
+    .join("\n").replace(/\n{3,}/g, "\n\n").trim();
+});
+const NOTE = (k) => NOTES[k] || "";
+
 const ok = (t) => ({ text: t, options: { color: TEAL, bold: true } });
 const no = (t) => ({ text: t, options: { color: AMBER, bold: true } });
 
@@ -86,7 +101,7 @@ function forest(s, rows, o) {
     { x: 0.8, y: 2.9, w: 8.4, h: 0.65, fontSize: 22, valign: "middle" });
   T(s, "นายวิศรุต ไตรยวงศ์ 663380363-7\nอาจารย์ที่ปรึกษา ศ. ดร.จักรชัย โสอินทร์\nวิทยาลัยการคอมพิวเตอร์ มหาวิทยาลัยขอนแก่น",
     { x: 0.6, y: 3.95, w: 8.8, h: 1.1, fontSize: 18, color: MUTED, lineSpacingMultiple: 0.95 });
-  s.addNotes("รอบนี้เล่าว่าปรับปรุงอะไรบ้าง ผลจึงเปลี่ยนจากชนะแบบคร่อม 0 มาเป็นชนะทิ้งห่าง แล้วจึงดูผลภาพรวมว่าแต่ละวิธีได้เท่าไรและเราชนะแต่ละวิธีได้อย่างไร");
+  s.addNotes(NOTE(n));
 }
 
 // 2. The whole journey on one slide
@@ -108,7 +123,7 @@ function forest(s, rows, o) {
     { text: "รอบนี้ (topology ยืนยันที่ล็อกเกณฑ์ไว้ก่อน): ", options: { bold: true, color: TEAL } },
     { text: "ชนะ Ko +24.6% [+21.6, +27.6] และชนะทุกวิธีอย่างมีนัยสำคัญ ทั้งใน sim และ ns-3" },
   ], { x: 0.65, y: 3.97, w: 8.7, h: 1.0, fontSize: 17, paraSpaceAfter: 4 });
-  s.addNotes("สไลด์นี้คือเรื่องทั้งหมดในหน้าเดียว เส้นสีส้มคือผลที่คร่อม 0 ยังสรุปไม่ได้ว่าชนะ เส้นสีเขียวคือชนะชัด แต่ละแถวคือผลหลังการปรับปรุงหนึ่งขั้น สไลด์ต่อไปจะอธิบายทีละขั้นว่าทำอะไรและทำไมช่วย");
+  s.addNotes(NOTE(n));
 }
 
 // 3. Why the old result spanned zero, and what was changed
@@ -123,7 +138,7 @@ function forest(s, rows, o) {
     ["แบบจำลองยังเสมอคู่เทียบที่แข็งที่สุด", "ตัด GRU ที่ไม่ช่วย ยืนยันด้วยเกณฑ์ที่ล็อกไว้ก่อน", "4"],
     ["2 seed ที่เคยเห็น ไม่มีช่วงความเชื่อมั่น", "5 seed × 20 topology, CI 95%, เกณฑ์ 4 ข้อ, topology ใหม่ 2 ชุด", "ทุกขั้น"],
   ], { y: 1.3, colW: [3.5, 4.8, 0.8], rowH: 0.48, fontSize: 16 });
-  s.addNotes("อาจารย์ติว่าผลรอบก่อนอาจเป็นความคลาดเคลื่อน ผมจึงไล่หาสาเหตุ แล้วแก้ทีละข้อ ขั้น 1 ถึง 4 คือการปรับปรุงที่ทำให้ส่วนต่างขยับ ส่วนแถวสุดท้ายคือการวัดผลที่ทำให้เชื่อถือได้");
+  s.addNotes(NOTE(n));
 }
 
 // 4. Step 1: new model
@@ -143,7 +158,7 @@ function forest(s, rows, o) {
   });
   T(s, "ผล: เทียบ Ko ใน sim เกิน +15% แล้ว แต่ยังสลับบ่อย (ราว 200 ครั้งต่อ episode) จึงแทบไม่ต่างจาก Li ในคะแนนรวม",
     { x: 0.45, y: 4.7, w: 6.6, h: 0.45, fontSize: 15, color: AMBER });
-  s.addNotes("รอบก่อนตัวเรียนรู้แทบไม่ต่างจาก Q-neutral รอบนี้เปลี่ยนแบบจำลองใหม่ ให้รู้คุณภาพลิงก์ และเริ่มจากความรู้ของ Ko ผลคือชนะ Ko ได้แล้ว แต่ยังสลับบ่อยเกินไป จึงเป็นที่มาของขั้นที่ 2");
+  s.addNotes(NOTE(n));
 }
 
 // 5. Step 2: hysteresis
@@ -161,7 +176,7 @@ function forest(s, rows, o) {
     { x: 0.65, y: 3.6, w: 4.0, h: 1.4, fontSize: 16 });
   s.addImage({ path: path.join(FIG, "fig_switching.png"), x: 5.05, y: 1.3, w: 4.5, h: 2.95 });
   T(s, "มุมบนซ้าย = throughput สูงและสลับน้อย ซึ่งเป็นจุดที่ดีที่สุด", { x: 5.05, y: 4.35, w: 4.5, h: 0.6, fontSize: 15, color: MUTED });
-  s.addNotes("hysteresis เป็นกฎตอนใช้งาน ไม่ได้เปลี่ยนการฝึก ลดการสลับจาก 204 เหลือ 42 ครั้ง throughput ไม่ลด คะแนนเทียบ Ko เพิ่มจาก 21.5 เป็น 26.0% ผลใน sim ดีมากแล้ว แต่ต้องถามต่อว่าเป็นจริงนอก sim หรือเปล่า");
+  s.addNotes(NOTE(n));
 }
 
 // 6. Step 3: calibration against ns-3
@@ -182,7 +197,7 @@ function forest(s, rows, o) {
   });
   T(s, "บทเรียน: ต้องปรับเทียบ sim ก่อนฝึก มิฉะนั้นนโยบายจะเรียนเอาเปรียบจุดที่ sim ผิด ขั้นนี้ทำให้ผลบน ns-3 ขยับจาก +1.5% เป็น +10.7% แต่ยังไม่พอ",
     { x: 0.45, y: 4.3, w: 9.1, h: 0.75, fontSize: 16, color: MUTED });
-  s.addNotes("ขั้นนี้สำคัญที่สุดในแง่ความน่าเชื่อถือ ถ้าไม่ตรวจกับ ns-3 เราจะรายงาน +21% ที่ไม่เป็นจริง หลังปรับเทียบผลขยับขึ้นแต่ยังคร่อม 0 และยังเสมอ Yuan+H จึงต้องมีขั้นที่ 4");
+  s.addNotes(NOTE(n));
 }
 
 // 7. Step 4: drop the GRU, confirmed under a locked protocol
@@ -205,7 +220,7 @@ function forest(s, rows, o) {
   T(s, [{ text: "ผลบน 40–59: ผ่านครบ", options: { bold: true, color: TEAL, breakLine: true } },
         { text: "P1 เทียบ Yuan+H +6.7% [+3.1, +10.2]\nP2 ขอบล่าง > 0 ทุกวิธี\nP3 ผ่านเกณฑ์ 4 ข้อ" }],
     { x: 5.85, y: 3.4, w: 3.5, h: 1.6, fontSize: 15 });
-  s.addNotes("ตัด GRU แล้วดีขึ้นทุกตัวชี้วัด น่าจะเพราะข้อมูลแต่ละขั้นเพียงพอแล้ว และ GRU ทำให้ฝึกยากขึ้นในงบ 100,000 ขั้น ขั้นนี้เปลี่ยนผลเทียบ Yuan+H จากเสมอเป็นชนะ และ ns-3 เทียบ Ko จากคร่อม 0 เป็นชนะชัด");
+  s.addNotes(NOTE(n));
 }
 
 // 8. Overall: what each method achieves
@@ -223,7 +238,7 @@ function forest(s, rows, o) {
   ], { y: 1.25, colW: [2.3, 1.15, 0.95, 1.05, 0.95, 1.05, 1.65], rowH: 0.38, fontSize: 16 }, [7]);
   T(s, "เราดีที่สุดใน throughput, p5, อัตราสูญเสีย และการสลับ ส่วน Jain ใกล้เคียงคนอื่น (M0 สูงสุดเพราะทุก flow ได้น้อยเท่าๆ กัน)  Q-neutral แทบส่งไม่ได้ (0.17 Mb/s) จึงไม่แสดง",
     { x: 0.45, y: 4.4, w: 9.1, h: 0.7, fontSize: 15, color: MUTED });
-  s.addNotes("ตารางนี้คือภาพรวมของทุกวิธี เราได้ throughput สูงสุด p5 สูงสุด สูญเสียต่ำสุด และสลับน้อยที่สุด ตัวเดียวที่ไม่ได้นำคือ Jain ซึ่งใกล้เคียงคนอื่น ช่องขวาสุดคือคะแนนรวมที่เราดีกว่าแต่ละวิธี");
+  s.addNotes(NOTE(n));
 }
 
 // 9. How we beat each method
@@ -246,7 +261,7 @@ function forest(s, rows, o) {
           { text: "เราชนะด้วย: ", options: { bold: true, color: TEAL } }, { text: win }],
       { x: x + 0.15, y: y + 0.5, w: 2.62, h: 1.25, fontSize: 13.5, paraSpaceAfter: 3 });
   });
-  s.addNotes("แต่ละวิธีแพ้ด้วยเหตุผลต่างกัน M0 ช่องแออัด Ko สลับบ่อย Yuan กับ Li ไม่ใช้ข้อมูลลิงก์และสลับบ่อย กรณีที่สำคัญที่สุดคือ Li+H และ Yuan+H ที่สลับเท่าเรา ส่วนต่างตรงนี้จึงมาจากคุณภาพการตัดสินใจล้วนๆ");
+  s.addNotes(NOTE(n));
 }
 
 // 10. Results on all topology sets + criteria
@@ -270,7 +285,7 @@ function forest(s, rows, o) {
   ], { x: 6.05, y: 1.3, w: 3.5, colW: [2.75, 0.75], rowH: 0.42, fontSize: 14 });
   T(s, "ผ่านครบทั้ง 2 setting และ 3 ชุด topology ช่วงความเชื่อมั่นไม่คร่อม 0 ทุกวิธี  เครือข่าย 50 / 80 โหนดที่ไม่เคยฝึกยังชนะ Ko +47%",
     { x: 6.05, y: 3.6, w: 3.5, h: 1.45, fontSize: 15, color: MUTED });
-  s.addNotes("topology 40–59 ไม่เคยใช้ก่อน ผลใกล้เคียงชุดทดสอบ แปลว่าไม่ได้ overfit เกณฑ์ 4 ข้อเขียนไว้ก่อน ผ่านครบทุกชุด ส่วน Yuan+H +6.7% ผ่านเป้า 5% แต่ยังไม่ถึง 10%");
+  s.addNotes(NOTE(n));
 }
 
 // 11. ns-3
@@ -288,7 +303,7 @@ function forest(s, rows, o) {
   ], { y: 1.25, colW: [1.6, 2.8, 2.8, 1.9], rowH: 0.36, fontSize: 16 }, [2]);
   T(s, "throughput เท่ากับหรือสูงกว่า Ko (S2 68.1 vs 67.1, B3 49.8 vs 43.6 Mb/s) และสลับน้อยกว่า 18 เท่า  ข้อยกเว้น: ไม่ใช้ RTS/CTS ใน S2 Ko ได้ throughput สูงกว่า (66.4 vs 63.8)",
     { x: 0.45, y: 4.3, w: 9.1, h: 0.8, fontSize: 16, color: MUTED });
-  s.addNotes("ns-3 เป็นผลประกอบ ไม่ได้ใช้ตัดสิน แต่ไปทางเดียวกับ sim ขอบล่างเทียบ Yuan+H เฉียด 0 เพราะมีแค่ 5 topology");
+  s.addNotes(NOTE(n));
 }
 
 // 12. Conclusion
@@ -311,7 +326,7 @@ function forest(s, rows, o) {
     { text: "ns-3 มี 5 topology: ช่วงเทียบ Yuan+H ยังกว้าง", options: { bullet: true, breakLine: true } },
     { text: "ยังไม่ได้ทดสอบบนอุปกรณ์จริง", options: { bullet: true } },
   ], { x: 5.35, y: 1.92, w: 4.05, h: 3.0, fontSize: 18, paraSpaceAfter: 6 });
-  s.addNotes("ข้อติเรื่องผลคร่อม 0 แก้แล้วด้วยการปรับปรุง 4 ขั้น ทั้งใน sim และ ns-3 และแสดงข้อจำกัดที่เหลือไว้ตรงๆ");
+  s.addNotes(NOTE(n));
 }
 
 pres.writeFile({ fileName: OUT }).then((f) => console.log("wrote", f));
