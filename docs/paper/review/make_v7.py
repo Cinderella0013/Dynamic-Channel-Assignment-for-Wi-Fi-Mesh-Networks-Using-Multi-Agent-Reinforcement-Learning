@@ -1,5 +1,9 @@
 """Build egat-mappo-v7.txt from v6 plus the per-comment answers: python docs/paper/review/make_v7.py
 
+HISTORICAL: already applied. Its output was renamed to egat-mappo-v6.txt (the version sent to the advisor),
+so the current v6 already contains the merged answers; rerunning this would apply them twice.
+The input it was written for is egat-mappo-v6.txt at commit be9f95f.
+
 - §2 Table 2 and the "Recent mesh studies" paragraph are replaced from c1_related_work.md.
 - Every advisor comment (`// Please ...`) gets one `// Authors' status` line (existing RESOLVED lines are kept,
   comment 2's PARTLY line is replaced) pointing to the matching response.

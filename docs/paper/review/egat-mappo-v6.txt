@@ -53,7 +53,7 @@ Classical mesh systems provide the starting point for this study. Ko et al. [1] 
 
 Reconfiguration disruption is also a prior concern. Ramachandran et al. [9] explicitly address flow interruption during channel reassignment, using a default-channel radio to redirect traffic while the change completes. The present work therefore does not claim that recognizing switching cost, preserving service during reassignment, or coupling channels and routes is new. It asks whether the particular learned controller improves the service–reconfiguration trade-off under the tested dynamics.
 
-Recent mesh studies sharpen that comparison. Shin et al. [16] develop conflict-aware assignment using a weighted graph and a list-coloring formulation. Sun et al. [15] study multi-agent actor–critic control for dynamic mesh topology. Tang et al. [17] examine self-coordinated topology optimization through transmit-power control, targeting delay and energy use. These studies are relevant because they address mesh interference or coordination directly. Their relevance to channel-and-parent selection depends on the precise action spaces and operating assumptions; these require a mechanism-level comparison.
+Recent mesh studies differ from this work mainly in what they control. Shin et al. [16] compute a one-shot channel assignment for a given topology. Links become vertices of a weighted conflict graph spanning up to three hops, and a greedy 2-approximation assigns each link a channel without changing routes or responding to traffic (Sections III–IV). Sun et al. [15] and Tang et al. [17] apply multi-agent reinforcement learning to mesh topology. The material available for [15] indicates per-access-point transmit-power control trained with a centralized critic and distributed actors. Secondary summaries of [17] describe a trade-off between end-to-end delay and terminal transmit power. In the material we could access, neither is reported to choose channels or parents directly. The present controller differs in three respects: it changes channel and parent jointly at fixed transmit power, its policy conditions on edge features and exchanged neighbour observations, and its execution limits reconfiguration through hysteresis and parent-first channel decoding. The action spaces do not coincide, so [15]–[17] are not numerical baselines, and our superiority claims remain limited to the Ko, Yuan and Li comparisons under the stated model. The full texts of [15] and [17] were unavailable to us.
 
 2.2 Graph-based learning and the choice of baselines
 
@@ -61,21 +61,22 @@ Graph attention allows a node to aggregate information from its neighbors with l
 
 PPO [6], GAE [7] and MAPPO [8] provide the optimization machinery. Their established role is to learn cooperative policies; they do not by themselves establish that a graph-based mesh controller is superior to a well-designed heuristic. That claim requires comparisons under stated information, decision and switching conditions.
 
-Table 2. Position of the study relative to representative prior work.
-Work | Original problem and approach | Relevance to EGAT–MAPPO | Comparison in this study
-Ko [1] | Distributed local-cost channel assignment in multi-radio mesh | Supplies a simple reference rule, prior and fallback | Adapted Ko baseline
-Hyacinth [11]; Alicherry et al. [12] | Multi-radio channel assignment and routing | Establish the channel–routing coupling addressed here | Related-work comparison
-Ramachandran et al. [9] | Conflict-aware assignment with traffic redirection during reassignment | Establishes earlier handling of reconfiguration disruption | Related-work comparison
-Yuan [2] | Attention and DQN for cognitive-radio channel/power allocation | Provides a graph-based value-learning alternative | Mesh adaptation, with and without hysteresis
-Li [3] | GAT–A2C for C-V2X resource-block/power allocation | Provides a recent graph-based actor–critic alternative | Mesh adaptation, with and without hysteresis
-Sun et al. [15] | Multi-agent actor–critic control of mesh topology | Closely related mesh coordination; detailed control assumptions need comparison | Literature comparison; no numerical result here
-Shin et al. [16] | Weighted-conflict-graph channel assignment | Recent model-based alternative to learned assignment | Literature comparison; no numerical result here
-Tang et al. [17] | Self-coordinated mesh topology optimization through power control | Related coordination problem with delay/energy objectives | Literature comparison; no numerical result here
-This work | Graph-conditioned channel and parent selection with switching-aware execution | Evaluates the combined design and the effect of stronger switching controls | Simulation, topology confirmation and selected ns-3 tests
+Table 2. Mechanism-level position of the study relative to representative prior work. "Unverified" marks items we could not confirm because the full text was inaccessible; it does not imply the feature is absent.
+Work | Decision/action | Information exchange | Reconfiguration rule | Training/execution | Difference from ours
+Ko [1] | Per-node channel from local cost; forwarding handled separately | Local neighbour channel usage | Local cost rule re-evaluated each round; no learned trade-off | Distributed heuristic, no training | Supplies our prior, BC teacher and baseline; does not choose parents
+Hyacinth [11]; Alicherry et al. [12] | Channel assignment coupled with routing / load-aware tree | Neighbour load and channel information | Protocol- or optimisation-driven reassignment | Heuristic or centralised optimisation | Establish the channel–routing coupling we also address
+Ramachandran et al. [9] | Interference-aware channel assignment | Measured interference, centralised server | Reassignment with default-channel redirection during the change | Centralised heuristic | Earlier handling of reconfiguration disruption
+Yuan [2] | Channel/power allocation, cognitive radio | Attention over interference graph | None specific | Attention + DQN | Mesh adaptation compared numerically, with and without hysteresis
+Li [3] | Resource-block/power allocation, C-V2X | GAT over vehicle graph | None specific | GAT + A2C | Mesh adaptation compared numerically, with and without hysteresis
+Sun et al. [15] | Per-AP transmit power, implicitly reshaping multi-hop topology (Fig. 1, 7, 9 captions); exact action set unverified | Unverified; centralised critic, distributed actors (abstract, Fig. 3) | Unverified; dynamic and AP-failure experiments (Fig. 11–12) | MARL actor–critic, CTDE, reward balancing delay vs channel efficiency; QualNet | Acts on power and range, not on channel and explicit parent; switching control unverified; no numerical comparison
+Shin et al. [16] | One channel per link from endpoint list intersection; topology and OLSR routes unchanged (Sec. IV-A–B, pp. 14757–14758) | Global communication graph and channel lists; weighted conflict graph up to 3 hops (Sec. III-B, p. 14756); no run-time exchange | None: one-shot static assignment, traffic-agnostic | No learning; greedy 2-approximation for Max list-Cut (Theorem 2, p. 14758); ns-3 + OLSR | Static and centralised; no parent choice, load adaptation or switching control; richer hidden/exposed-terminal conflict model than ours; no numerical comparison
+Tang et al. [17] | Unverified (secondary summaries: terminal transmit power, delay–power trade-off) | Unverified (secondary summaries: signals exchanged among terminal agents) | Unverified | MARL (title); details unverified | Provisionally a power-control problem; full text not obtained; no numerical comparison
+This work | Per-node downlink channel (6) and parent (4 slots, progress-masked), fixed 20 dBm | Neighbour observation exchange, ~1 coordination round per channel decision; edge features in GATv2 | Switch hysteresis (margin 2); sequential parent-before-child channel decoding | BC warm start from Ko, then MAPPO (centralised critic, decentralised execution) | Joint channel–parent control with explicit reconfiguration limits; simulation, topology confirmation and selected ns-3 tests
 
 The task differs from the original Yuan and Li settings; comparisons with their mesh adaptations concern controller design and execution treatment. Establishing a methodological distinction from the closest mesh studies requires a fuller comparison of their actions, observations and coordination assumptions. Table 2 does not imply that every listed method solves the same problem or that an unreported feature is absent.
 
 // Please complete the full-paper comparison with [15–17], citing the pages that describe their actions, information exchange and reconfiguration rules. Explain the specific capability or design difference that remains after that comparison. If a method is close enough to challenge a retained superiority claim, add the most relevant feasible control; otherwise explain the mismatch and keep the claim within scope. Do not start a new benchmark campaign simply to lengthen this section.
+// Authors' status, 10 Nov 2026 — PARTLY RESOLVED. Table 2 and Section 2 rewritten at mechanism level. Full text of [16] read and cited by section/page; [15] verified from abstract, keywords and figure captions only; [17] from bibliographic metadata only (full texts inaccessible). See Response R1.
 
 3. Network model and control objective
 
@@ -133,7 +134,7 @@ The local training signal is described by
 where u_i is the utility associated with flows traversing node i and n_alive is the number of live or available nodes under the implemented convention. N_sw and N_rc in (2) are the per-step terms of N_rep (Section 3.2); the mapping of the local terms in (3) is still to be stated. EGAT–MAPPO anneals λ_t from 0.5 to 0.1, whereas the learned baselines retain 0.5. The optimizer thus uses shaped local rewards. Equation (1) expresses the system objective, but equivalence between the shaped updates and maximization of that objective has not been established.
 
 // Please supply the exact model definitions from the code: the 38-index observation vector, candidate-slot encoding and normalization; queue limits and update order; progress-potential calculation; gateway/no-parent behavior; u_i, n_alive and each reward counter; and the allocation rule for overlapping interference domains. Reconcile N_rep using one complete Q-neutral S1 or S4 event ledger, including initialization, induced retunes, inner-step operations and the counting horizon, then show that EGAT and Ko use the same convention. Existing code and logs should be examined first; a small diagnostic run is needed only if those records are unavailable.
-// Authors' status, 10 Nov 2026 — PARTLY RESOLVED. N_rep is reconciled from the code (Section 3.2). Per-episode split on topologies 0–19: Ko 456.9 channel retunes + 158.6 route changes = 615.5; EGAT+H 39.5 + 2.8 = 42.2; Q-neutral 6,263.3 + 1,787.2 = 8,050.5. EGAT, Ko, Li, Yuan, Q-neutral and the ns-3 runs use the same counter. Still to supply: the indexed 38-entry observation, queue limits and update order, the potential, gateway/no-parent behaviour, u_i, n_alive, and allocation for overlapping domains.
+// Authors' status, 10 Nov 2026 — RESOLVED. All definitions now come from the code with file:line references (38-entry observation, q_max, step order, potential and mask, gateway/no-parent rules, u_i, n_alive, counters, airtime rule); nine sentences corrected. See Response R2.
 
 4. EGAT–MAPPO
 
@@ -256,6 +257,7 @@ Algorithm 1. Controller operations, with the exact training/evaluation order to 
 7. During training, retain the sampled decision and its correct probability for the PPO update.
 
 // Please show one training transition and one deterministic evaluation epoch from the code, including candidate slots, prior/mask order, proposal, executed action, stored log-probability, entropy and fallback. State how an inactive channel head enters the loss, how the critic handles termination/reset, and how empty choices and teacher ties are treated. Also give each baseline's channel/parent decision clock, available observations, warm start and total training interactions. A common decoder alone does not establish identical opportunities or information. Resolve this from the implementation first; use a small boundary test only if the trace reveals a problem.
+// Authors' status, 10 Nov 2026 — RESOLVED. One training transition and one deterministic evaluation epoch traced from the code; the 2-nat fallback uses the sum of the two head entropies and fires on 9 of 43,901 decisions. See Response R3.
 
 5. Properties and computational cost
 
@@ -295,6 +297,7 @@ With fixed layer/head counts, sparse feature and activation storage is O(nd+E(d+
 For B graph transitions and K update passes, a coarse encoder/actor training term is O(KB[L(nd²+Ed)+nd²+nd(C+P)]), with critic, optimizer and simulator costs added separately. Two graph layers entail two aggregation dependencies, not necessarily two physical message rounds: neighbor discovery, potential dissemination and sequential decoding can require further communication.
 
 // Please check these bounds against the actual tensors and routines: sparse or dense edges, cost normalization, potential updates, decoder ordering and encoder caching. If the paper retains a real-time or deployment-scalability claim, provide inference latency, peak memory and communication measurements for 20/50/80 nodes on named hardware. Otherwise retain the analytical bounds and the stated absence of deployment measurements; another experiment is not needed just to make this section longer.
+// Authors' status, 10 Nov 2026 — RESOLVED. Complexity checked against the tensors; latency, memory and coordination measured at 20/50/80 nodes on stated hardware. See Response R4.
 
 6. Experimental methodology
 
@@ -373,6 +376,7 @@ The simulator column in Table 9 covers twenty topologies, while each ns-3 column
 Hysteresis, the uncertainty calculation, the airtime model and GRU removal were revised after inspecting earlier results. Those decisions are part of the study history. Their disclosure is important because the later confirmation is intended to address model selection, not erase it.
 
 // Please provide one versioned supplement containing the exact code, configuration, model checkpoints, environment/build records, full-precision outputs and dated protocol history. Include the training/validation/calibration/test seed map, settings (a)/(b), the three-seed ablation and both ns-3 MAC settings, with commands that regenerate the tables. This is a request for the existing study records, not a request to retrain every model. The private repository listed in the README was not accessible during this review, so access or an archive is still needed.
+// Authors' status, 10 Nov 2026 — RESOLVED. Versioned supplement NW14_EGAT_supplement_fb58cad.zip (code, configuration, checkpoints, outputs, environment and dated protocol history; Tables 5-9 regenerate from it). See Response R6.
 
 7. Results
 
@@ -564,3 +568,692 @@ For completion before submission
 Status at v6: comments 5 and 7 and the N_rep part of comment 2 are resolved from existing records. Comments 1, 3, 4 and 6 and the rest of comment 2 remain open.
 
 The inline comments ask for three connected pieces of work: provide the existing code/results/protocol package; reconstruct event counts, scores and uncertainty; and finish the method and closest-work comparison from those sources. Begin with the available records. A new diagnostic or comparative run is needed only when those records reveal a specific unresolved claim. The numerical tables in this revision have been preserved from the supplied study; improved prose is not evidence that the underlying experiments have been independently reproduced.
+
+
+==============================================================================
+Authors' responses to the review comments (10 Nov 2026)
+==============================================================================
+Scripts and outputs named below are in the supplement archive (Response R6) under code/docs/paper/review/.
+
+Response R1. Comment 1 (Section 2): mechanism-level comparison with [15]-[17]
+------------------------------------------------------------------------------
+Prepared 10 Nov 2026. Our reference point: each mesh node is an agent that picks its downlink channel (6 choices) and its parent (4 candidate slots). The model is an edge-aware GATv2 with a Ko local-cost residual prior, warm-started by behaviour cloning from Ko and trained with MAPPO (centralised critic, decentralised execution). Execution adds switch hysteresis (margin 2) and sequential channel decoding (parents before children). Neighbours exchange observations, about one coordination round per channel decision. Transmit power is fixed at 20 dBm.
+
+Access summary:
+
+| Paper | Full text read? | What was read |
+|---|---|---|
+| [16] Shin et al., IEEE Access 2024 | **Yes** (open access, CC BY-NC-ND) | Full 13-page PDF, pp. 14751–14763 |
+| [15] Sun et al., IEEE TWC 2024 | **No** (closed; no preprint found) | Abstract, IEEE index terms, author keywords, captions of all 13 figures (IEEE Xplore metadata) |
+| [17] Tang et al., JNCA 2025 | **No** (closed; ScienceDirect blocked automated access with a CAPTCHA; no preprint found) | Crossref metadata only (title, authors, vol. 239, art. 104177). Abstract content seen only as search-engine summaries, not read directly |
+
+---
+
+## 1. Per-paper notes
+
+### [16] Shin, Lee, Choi — "A Conflict-Aware Channel Assignment in Multi-Radio Multi-Channel Wireless Mesh Networks", IEEE Access 12:14751–14763, 2024
+
+- Source: https://doi.org/10.1109/ACCESS.2024.3357142 (IEEE Xplore document 10411895). Full PDF retrieved from IEEE Xplore and read in full.
+- **Action space.** One channel per *link* of a given communication graph, chosen from the intersection of the two endpoint routers' channel lists, L(v) = L(n_i) ∩ L(n_j) (Sec. IV-A, Eq. (8), p. 14757). Routing and parent choice are not decided. The algorithm "preserves the network topology" (Sec. IV-B, p. 14758), and routes come from OLSR in the evaluation (Sec. V, p. 14760). Transmit power is not a decision variable.
+- **Information used / exchanged, and when.** The input is the whole communication graph plus per-router channel lists. Links become vertices of a weighted conflict graph with edges between links within 3 hops. Weights are set by hop distance: 1-hop for interference, 2-hop for mainly hidden terminals, 3-hop for mainly exposed terminals (Sec. III-B, pp. 14755–14756). The weights are tuned to (1, 2, 2) by simulation (Sec. V, Table 2, p. 14761). The paper describes no message-passing protocol or distributed exchange. It is a global graph algorithm run once before operation. Traffic load is not an input.
+- **Reconfiguration/switching rule.** None. The assignment is one-shot and static. There is no traffic- or time-triggered reassignment and no switching cost. GA has two steps: first it fixes vertices with a single available channel, then it assigns the remaining vertices greedily, one at a time, to the channel that adds the least monochromatic conflict weight (Fig. 6–7, Sec. IV-B, pp. 14757–14758). It is a 2-approximation for the dual Max list-Cut and runs in O(|E_C|²) (Theorem 2, p. 14758). The related-work section notes dynamic channel switching by others [9] but does not adopt it (Sec. II, p. 14752).
+- **Training/execution.** No learning. Deterministic combinatorial algorithm. Evaluation: ns-3, 802.11, RTS/CTS disabled, OLSR with 30 s initialisation, 100 s runs, 5 random UDP source–sink pairs at 16–1024 kb/s. Topologies: lattices of 100 nodes, a 25-node chain, and 20–50 random nodes. 3 or 12 channels. Compared with a greedy heuristic GH (pp. 14760–14762).
+- **Difference from ours.** [16] solves a static, traffic-agnostic, centralised channel-colouring problem on a fixed routing topology. We solve a load-adaptive, per-node, decentralised joint channel-and-parent decision over time, with explicit control of reconfiguration frequency. [16]'s conflict model (hidden or exposed terminals up to 3 hops) is richer than our interference-edge model. Its approximation guarantee has no counterpart in our work.
+
+### [15] Sun, Lv, Xiao, Liu, Tang, Li, Mu — "Multi-Agent Reinforcement Learning for Dynamic Topology Optimization of Mesh Wireless Networks", IEEE TWC 23(9):10501–10513, 2024
+
+- Source: https://doi.org/10.1109/TWC.2024.3372694. IEEE Xplore document 10466475 (https://ieeexplore.ieee.org/document/10466475): abstract, keywords and figure captions read via the page's metadata and the `/rest/document/10466475/figures` endpoint. **Full text not accessible** (closed access; no arXiv or author preprint found via OpenAlex, Semantic Scholar or web search). **No page or section numbers can be given.**
+- **Action space (partly verified, from captions only).** Fig. 1 contrasts low vs high *transmission power* of an AP when sending a frame to the gateway. Fig. 7 compares "transmission distance" across cases. Fig. 9 shows "optimized topologies". IEEE index terms include "Transmission Power". This indicates per-AP transmit-power (range) control that implicitly reshapes the multi-hop topology. *Unverified:* the exact action set, whether channels or next hops are chosen explicitly, and the decision period.
+- **Information exchange.** *Unverified.* The abstract states only a "centralized-critic-distributed-actor scheme" (Fig. 3 caption says the same). The index term "Global Information" suggests the critic uses global state, but what actors observe or exchange at run time is not visible.
+- **Reconfiguration rule.** *Unverified.* No switching-cost, hysteresis or rate-limit mechanism is mentioned in the abstract or captions. Fig. 11–12 show dynamic behaviour and recovery after an AP failure. Absence from the abstract does not establish absence from the paper.
+- **Training/execution (verified at abstract level).** Multi-agent actor–critic (MACRL), centralised critic with distributed actors. A multi-objective reward balancing method trades end-to-end delay against channel efficiency. Validation in QualNet (Fig. 10, 12). Compared with a PGRL baseline (Fig. 13).
+- **Difference from ours.** Similar CTDE training regime. The verified control variable (transmit power, hence connectivity) differs from ours (channel and explicit parent at fixed power). We could not verify whether [15] restricts reconfiguration frequency.
+
+### [17] Tang, Sun, Liu, Li, Yuan — "Multi-agent reinforcement learning based dynamic self-coordinated topology optimization for wireless mesh networks", JNCA 239:104177, 2025
+
+- Source: https://doi.org/10.1016/j.jnca.2025.104177 (ScienceDirect PII S1084804525000748). **Full text and abstract not accessible.** ScienceDirect returned HTTP 403 or a CAPTCHA, which was not bypassed. Crossref and OpenAlex carry no abstract. No preprint was found. Verified: title, authors, volume, article number (Crossref). Note: Sun and Tang co-author both [15] and [17].
+- **Action space.** *Unverified.* Search-engine summaries of the ScienceDirect abstract (not read directly) describe a trade-off between end-to-end delay and *terminal transmit power*. This is consistent with v5's wording ("transmit-power control, targeting delay and energy"), but it is not confirmed from the paper.
+- **Information exchange.** *Unverified.* The same summaries mention terminal agents coordinating through signals exchanged among agents ("self-coordinated"). Content, timing and size are unknown.
+- **Reconfiguration rule.** *Unverified.* Nothing visible.
+- **Training/execution.** *Unverified* beyond "multi-agent reinforcement learning" in the title.
+- **Difference from ours.** Provisional: delay and power objective via power control, versus our channel-and-parent selection at fixed power with switching-aware execution. To be confirmed when the full text is obtained (library access or a request to the authors).
+
+### Does any of [15]–[17] warrant an added control?
+
+- [15] and [17] act, as far as can be verified, on transmit power. Our simulator fixes power at 20 dBm and acts on channel and parent. Reproducing them would require a different action space and objective, which would make a new problem rather than a control. Their numbers would not test our retained claims (EGAT+H vs Ko, Yuan+H and Li+H on the service–reconfiguration trade-off). **No control added; scope statement kept.**
+- [16] is the only one expressible in our action space: a static channel plan per link, with parents from Ko or minimum hop. It is static and traffic-agnostic, however, while the retained claim concerns load-adaptive reconfiguration under the stated dynamics. It therefore does not challenge that claim directly. **No benchmark campaign started.** If a reviewer later asks, one feasible single-configuration control would be [16]'s GA run once per topology at t = 0 on the existing 20-topology set. That would cost one evaluation run, not a campaign. This is noted, not executed.
+
+---
+
+## 2. Replacement Table 2 (§2)
+
+Table 2. Mechanism-level position of the study relative to representative prior work. "Unverified" marks items we could not confirm because the full text was inaccessible; it does not imply the feature is absent.
+Work | Decision/action | Information exchange | Reconfiguration rule | Training/execution | Difference from ours
+Ko [1] | Per-node channel from local cost; forwarding handled separately | Local neighbour channel usage | Local cost rule re-evaluated each round; no learned trade-off | Distributed heuristic, no training | Supplies our prior, BC teacher and baseline; does not choose parents
+Hyacinth [11]; Alicherry et al. [12] | Channel assignment coupled with routing / load-aware tree | Neighbour load and channel information | Protocol- or optimisation-driven reassignment | Heuristic or centralised optimisation | Establish the channel–routing coupling we also address
+Ramachandran et al. [9] | Interference-aware channel assignment | Measured interference, centralised server | Reassignment with default-channel redirection during the change | Centralised heuristic | Earlier handling of reconfiguration disruption
+Yuan [2] | Channel/power allocation, cognitive radio | Attention over interference graph | None specific | Attention + DQN | Mesh adaptation compared numerically, with and without hysteresis
+Li [3] | Resource-block/power allocation, C-V2X | GAT over vehicle graph | None specific | GAT + A2C | Mesh adaptation compared numerically, with and without hysteresis
+Sun et al. [15] | Per-AP transmit power, implicitly reshaping multi-hop topology (Fig. 1, 7, 9 captions); exact action set unverified | Unverified; centralised critic, distributed actors (abstract, Fig. 3) | Unverified; dynamic and AP-failure experiments (Fig. 11–12) | MARL actor–critic, CTDE, reward balancing delay vs channel efficiency; QualNet | Acts on power and range, not on channel and explicit parent; switching control unverified; no numerical comparison
+Shin et al. [16] | One channel per link from endpoint list intersection; topology and OLSR routes unchanged (Sec. IV-A–B, pp. 14757–14758) | Global communication graph and channel lists; weighted conflict graph up to 3 hops (Sec. III-B, p. 14756); no run-time exchange | None: one-shot static assignment, traffic-agnostic | No learning; greedy 2-approximation for Max list-Cut (Theorem 2, p. 14758); ns-3 + OLSR | Static and centralised; no parent choice, load adaptation or switching control; richer hidden/exposed-terminal conflict model than ours; no numerical comparison
+Tang et al. [17] | Unverified (secondary summaries: terminal transmit power, delay–power trade-off) | Unverified (secondary summaries: signals exchanged among terminal agents) | Unverified | MARL (title); details unverified | Provisionally a power-control problem; full text not obtained; no numerical comparison
+This work | Per-node downlink channel (6) and parent (4 slots, progress-masked), fixed 20 dBm | Neighbour observation exchange, ~1 coordination round per channel decision; edge features in GATv2 | Switch hysteresis (margin 2); sequential parent-before-child channel decoding | BC warm start from Ko, then MAPPO (centralised critic, decentralised execution) | Joint channel–parent control with explicit reconfiguration limits; simulation, topology confirmation and selected ns-3 tests
+
+Note for authors: rows [1], [2], [3], [9], [11], [12] are condensed from the existing v5 text and table, not re-read for this comment. Check them against the sources before submission, or keep the v5 wording for those rows.
+
+---
+
+## 3. Replacement §2 paragraph (replaces "Recent mesh studies sharpen that comparison…", ≤ 200 words)
+
+Recent mesh studies differ from this work mainly in what they control. Shin et al. [16] compute a one-shot channel assignment for a given topology. Links become vertices of a weighted conflict graph spanning up to three hops, and a greedy 2-approximation assigns each link a channel without changing routes or responding to traffic (Sections III–IV). Sun et al. [15] and Tang et al. [17] apply multi-agent reinforcement learning to mesh topology. The material available for [15] indicates per-access-point transmit-power control trained with a centralized critic and distributed actors. Secondary summaries of [17] describe a trade-off between end-to-end delay and terminal transmit power. In the material we could access, neither is reported to choose channels or parents directly. The present controller differs in three respects: it changes channel and parent jointly at fixed transmit power, its policy conditions on edge features and exchanged neighbour observations, and its execution limits reconfiguration through hysteresis and parent-first channel decoding. The action spaces do not coincide, so [15]–[17] are not numerical baselines, and our superiority claims remain limited to the Ko, Yuan and Li comparisons under the stated model. The full texts of [15] and [17] were unavailable to us.
+
+(Word count ≈ 190.)
+
+---
+
+## 4. Status line
+
+// Authors' status, 10 Nov 2026 — PARTLY – full text of [16] read and cited by section/page; [15] verified only from abstract, keywords and figure captions; [17] verified only from bibliographic metadata (full texts of [15] and [17] inaccessible); Table 2 and §2 rewritten at mechanism level; no control added because [15]/[17] act on transmit power and [16] is static, so the retained claims stay within the Ko/Yuan/Li scope.
+
+Response R2. Comment 2 (Section 3): model definitions from the code
+------------------------------------------------------------------------------
+Scope: the items of comment 2 that v6 still lists as open (observation, queue and update order, potential and mask, gateway/no-parent handling, u_i, n_alive, reward counters, overlapping-domain airtime). The N_rep reconciliation already in v6 §3.2 is not repeated. All references are to the `ns3-validation` branch. The calibrated simulator settings used for every v10 result are `airtime="domain"`, `mac_eff=0.65`, `contention=0.0` (`runs/v10/calib.env`, passed with `--set`, `mesh/rl/train.py:164`). The `ScenarioConfig` defaults (`airtime="static"`, `mac_eff=1.0`, `mesh/sim/scenarios.py:25-27`) are not used for any reported number.
+
+`docs/paper/review/c2_obs_dump.py` prints the vector below for one node of `MeshEnv(S2, seed 0)` and asserts the 18 + 20 = 38 layout.
+
+---
+
+## 1. Observation vector (38 entries per node)
+
+The actor input is x_i = [o_i, m_i] (`mesh/model/agent.py:51,59`). Here o_i has F_O = 6 + |ℂ_all| + (K+1) = 6 + 7 + 5 = 18 entries and m_i has F_M = 5K = 20 entries, with K = 4 (`mesh/rl/agents_io.py:12-16`). All entries describe the state after the previous step (`mesh/sim/env.py:217,220-237`). Rates and queues are in Mb/s per 100 ms step. A queue of q therefore holds 0.1·q Mb.
+
+### 1a. Own state, indices 0–17 (`agents_io.py:69-80`, `env.py:224-225`)
+
+| Idx | Name | Definition (code) | Normalisation |
+|---|---|---|---|
+| 0 | offered_load | d_i(t−1): new demand generated at i in the last step, zero for gateways and dead nodes (`env.py:133`) | none (Mb/s) |
+| 1 | unmet | o_i − x_i = (q_i + d_i) − x_i: offered minus served in the last step. Equals the new queue plus switch loss plus overflow (`env.py:134,224`) | none (Mb/s) |
+| 2 | is_gateway | 1{i ∈ G} | binary |
+| 3 | hop_to_gw | φ_i / n, with φ_i defined in §3 (unreachable or dead: φ_i = n, so the entry is 1) | ÷ n (`agents_io.py:75`) |
+| 4 | alive | 1{i alive} | binary |
+| 5 | backlog | q_i(t), the source queue after the last step (`env.py:181,209`) | none (Mb/s) |
+| 6–12 | downlink channel | one-hot of the radio-1 channel over the 7 labels (1, 6, 11, 36, 40, 44, 48) (`radio.py:10`, `agents_io.py:76`) | one-hot |
+| 13–17 | current parent | one-hot over {slot 0, …, slot 3, none}. "None" covers no parent and a parent that is not among the four candidates (`agents_io.py:77-79`) | one-hot |
+
+Index 6 (channel 1) is structurally zero. Radio 1 is reset to index 1 (`env.py:75`), and every controller sets it to c+1 ∈ {1,…,6} (`agents_io.py:63`, `ko.py:93`). Channel 1 appears only on radio 0, the uplink, of gateways and parentless nodes (§4). The network therefore receives 37 informative entries and one constant.
+
+### 1b. Candidate slots, indices 18–37 (`agents_io.py:82-91`)
+
+Slot j ∈ {0,…,3} of node i holds candidate v = s_{ij} and occupies indices 18 + 5j + k:
+
+| k | Name | Definition | Normalisation |
+|---|---|---|---|
+| 0 | valid | 1{slot filled and v alive} | binary |
+| 1 | snr | static link SNR, P_rx(i,v) − N_0 in dB. It omits the S4 external interferer (`env.py:231`) | ÷ 40. Not clipped: about 0.45 at the −76 dBm link threshold, above 1 below ≈8 m |
+| 2 | rate | MCS rate on the channel i and v currently share, including external noise; 0 if they share no channel (`env.py:227`, `graph.py:38-44`) | ÷ 143.4, in [0,1] |
+| 3 | load_frac | load_ℓ / cap_ℓ on link i→v. Under domain airtime this equals D_ℓ/η, the domain airtime demand relative to η (§7); 0 if the link is unloaded (`env.py:228`, `flows.py:97`) | none, ≥ 0, may exceed 1 |
+| 4 | ack | delivered/offered on link i→v in the last step, sent_ℓ / load_ℓ; 1 if the link is unloaded (`env.py:229`) | in [0,1] |
+
+All five values are multiplied by `valid`, so empty slots and dead candidates read as zeros (`agents_io.py:90`). **The fifth descriptor is the per-link delivery (ACK) ratio**, the same quantity as edge feature 7. The four descriptors named in the text (feasibility, SNR, rate, load) are k = 0–3.
+
+Slots are filled with the link neighbours of i (P_rx ≥ −76 dBm, any liveness), sorted by φ ascending, then SNR descending, then node id. The first four are kept and missing slots are padded with −1 (`agents_io.py:23-37`). The `valid` feature does **not** apply the progress mask or the gateway rule. Gateways therefore show valid = 1 on their filled slots, although their parent is always decoded to −1 (§4).
+
+---
+
+## 2. Queue limit and update order within one step
+
+**Queue limit.** q_max = 5·μ, with μ the scenario mean on-rate (`env.py:121`): 10 in S1, 50 in S2, 30 in S3/S4/S6 and B1–B5, 20 in S5. Queues exist only at traffic sources. Relays hold no queue: a flow is served end-to-end at one rate along its path (fluid model).
+
+**Order of operations in `MeshEnv.step`** (`env.py:116-218`). The action (C(t), P(t)) is applied to state at t:
+
+1. **Validate.** Out-of-range parents become −1 (`env.py:113`).
+2. **Failure** (S6, t = failure_step only). The non-gateway with the most links dies. Its queue counts as lost (`env.py:123-128`).
+3. **Exogenous inputs.** Interferer noise (S4) is applied, and the hotspot moves (B1) (`env.py:129-132`).
+4. **Demand.** d_i(t) is drawn from the on/off chain: persistence 0.9, initial on-probability 0.7, on-rate Exp(μ) times scenario multipliers (`traffic.py:5-6,28-48`). Gateways and dead nodes get zero. Offered load o_i = q_i(t) + d_i(t) (`env.py:133-134`).
+5. **Switch detection.** sw_ch(i) = 1{radio-1 channel changed} for live nodes, and sw_rt(i) = 1{parent changed} for live sources. Each sets a one-step downtime counter (`env.py:139-143`).
+6. **Rates.** The shared channel of each pair is the largest common channel index (`graph.py:24-35`); dead nodes share none. MCS rate follows (`env.py:144-145`). **Interrupted links**: every link of a retuned node on its new radio-1 channel, in both directions, which includes its children's uplinks; and the uplink of a node that changed parent. These links get rate 0 for this step (`env.py:146-150`).
+7. **Routing.** The planned path uses rate > 0 and ignores downtime; the actual path uses this step's rate after interruptions. Both follow next_hop until a gateway is reached; otherwise the path is None (`env.py:152-153`, `flows.py:32-48`). The active flows are the live sources with o_i > 0 (`env.py:154`).
+8. **Airtime/capacity and service.** `domain_allocate` gives the served rate x_i for each flow from the actual paths and o_i (§7, `env.py:160-161`). Per-link delivered traffic is accumulated for the ACK feature (`env.py:165-169`).
+9. **Switch loss**, setting (a) only. A flow whose *planned* path contains an interrupted hop loses q_i(t), the queue carried into the step. The current step's arrivals d_i(t) are kept (`env.py:172-178`). Such a flow also has no actual path, so x_i = 0.
+10. **Queue and overflow.** b_i = o_i − x_i − ℓ^sw_i, overflow = max(b_i − q_max, 0), q_i(t+1) = min(max(b_i, 0), q_max) (`env.py:179-181`). Loss = switch loss + failure loss + overflow (`env.py:215`).
+11. **Downtime counters** decrease by one (`env.py:182-183`).
+12. **Throughput window, utility, counters, reward** (§5–6, `env.py:189-205`).
+13. **Commit** C(t), P(t), demand, queues and loads; t ← t+1; observe (`env.py:207-218`).
+
+In one step, service draws on the queue and the new arrivals together. Switch loss and overflow are applied after service.
+
+---
+
+## 3. Progress potential φ and progress mask
+
+**Potential.** φ_i is the multi-source BFS hop count from the live gateways on the physical link graph E_L restricted to live nodes (`flows.py:7-20`, `env.py:222`):
+
+    φ_g = 0 for live g ∈ G;   φ_i = 1 + min_{v ∈ N_L(i), v alive} φ_v;   φ_i = n if unreachable or dead (`env.py:223`).
+
+E_L contains the pairs with P_rx ≥ −76 dBm. It is distance-based and independent of channels and load (`graph.py:17-21`). φ therefore changes only when a node fails. Every agent reads φ from the same observation, so all decisions in a step use one common potential, as Proposition 1 requires.
+
+**Mask** (`mesh/model/agent.py:40-47`). Let s_{ij} be slot j of node i. Then
+
+    M_ij = 1{s_ij ≠ −1} · 1{s_ij alive} · 1{i ∉ G} · 1{φ_{s_ij} < φ_i},
+
+and if no slot qualifies, M_i0 = 1. The mask is applied to the route logits after the Ko prior: logits − softplus(β_r)·z(Ko cost), masked with −10⁹ (`egat.py:116-118`). Channels are not masked. Slots are sorted by φ, so slot 0 is a progress parent whenever φ_i < n. The forced slot 0 therefore arises only for gateways, dead nodes and nodes cut off from every gateway.
+
+---
+
+## 4. Gateway and no-parent handling
+
+Action a = 4c + j encodes downlink channel c+1 and parent slot j (`agents_io.py:3-5`). `decode` (`agents_io.py:56-66`) sets:
+
+- **Parent**: p_i = s_ij if slot j passes `_valid_slots` (filled, candidate alive, i not a gateway; `agents_io.py:40-44`), otherwise −1. Gateways always get p_g = −1.
+- **Radio 1 (downlink)**: c_i + 1 from the node's own action. This includes gateways and parentless nodes, which still choose a downlink channel.
+- **Radio 0 (uplink)**: the parent's radio-1 channel if p_i ≥ 0, else index 0 (channel 1). Gateways and parentless nodes therefore park their uplink on channel 1. Because `common_channel` takes the largest shared index (`graph.py:24-35`), a parked uplink never displaces a dedicated channel.
+
+Effects on traffic: a gateway generates no demand (`env.py:133`) and terminates paths. A source without a path to a gateway is not served. Its offered load stays in its queue up to q_max, it counts in N_unrouted (§6), and its windowed throughput enters the utility as log(0 + ε). Dead nodes produce no demand, share no channel and are excluded from every counter.
+
+**Code note (cut-off nodes).** The comment at `agent.py:46` says forced slot 0 is "decoded to −1". `decode` uses `_valid_slots`, not the progress mask, so a live node cut off from all gateways but with a live neighbour is decoded to that neighbour. In S6 (seeds 0–19, steps 101–199, Ko driving), 297 of 495 cut-off node-steps decoded to a parent. The flow is unrouted either way, so throughput and loss are unchanged. Any cycle stays inside the cut-off component, and such parent changes do enter N_rc.
+
+---
+
+## 5. u_i, n_alive and the local reward (3)
+
+**Windowed throughput** (`env.py:189-194`). With W = 10 steps (1 s, `scenarios.py:19`) and a_i(τ) = 1{o_i(τ) > 0}:
+
+    x̄_i(t) = Σ_{τ∈W} x_i(τ)a_i(τ) / Σ_{τ∈W} a_i(τ)   (0 if the denominator is 0),
+    F(t) = {i alive, i ∉ G : d_i(τ) > 0 for some τ ∈ W}.
+
+**Global utility.** U(t) = Σ_{f∈F(t)} log(x̄_f + ε) with ε = 0.01 (`env.py:204`, `metrics.py:74-75`).
+
+**Local utility** (`env.py:195-199`):
+
+    u_i(t) = Σ_{f ∈ F(t) : i ∈ π̂_f(t)} log(x̄_f + ε),   with π̂_f = {f} if the planned path is None.
+
+Here π̂_f is the planned path (step 7). It includes the source and the terminating gateway. Relays and gateways therefore receive the utility of every flow they carry, and an unroutable flow is charged at its source.
+
+**n_alive.** This is the number of live nodes, **gateways included**, in the observation on which the action was taken: n_alive = max(Σ_i alive_i(t−1), 1) (`agents_io.py:95,105`). At the failure step the dying node is still counted and still receives a reward for that step.
+
+**Local reward** (`agents_io.py:94-107`):
+
+    r_i(t) = λ u_i(t) + (1−λ) R_t / n_alive − 0.1 s_i(t) − 0.05 r^p_i(t),   and r_i = 0 for dead i.
+
+For EGAT, λ_t = 0.5 + (0.1 − 0.5)·min(k/K_total, 1), where k is the environment step including behaviour cloning (`agent.py:140-142`, `egat.py:45-46`). The baselines use λ = 0.5 (`train.py:120`).
+
+**Local penalty terms.**
+
+- s_i = 1{c_{i,1} changed} + 1{c_{i,0} changed, not explained by following}, plus one for each child whose uplink was retuned only because i retuned its downlink. A child's radio-0 change counts as "following" when the child kept the same parent and that parent's radio 1 changed. The change is then charged to the parent (`agents_io.py:98-103`).
+- r^p_i = 1{p_i(t) ≠ p_i(t−1)} (`agents_io.py:104`).
+
+With every node alive, Σ_i s_i = N_sw(t) and Σ_i r^p_i = N_rc(t). The local penalties are therefore an exact attribution of the two global counters in (2): the global penalty is split among the nodes that caused it, not copied to each node.
+
+---
+
+## 6. Reward counters (`env.py:200-205`, reported in `info`, `env.py:212-216`)
+
+| Counter | Definition | In reward |
+|---|---|---|
+| N_sw(t) (`n_channel_switch`) | Σ_{i alive} Σ_{k∈{0,1}} 1{c_{i,k}(t) ≠ c_{i,k}(t−1)} | −0.1 (γ) |
+| N_rc(t) (`n_route_change`) | Σ_{i alive, i∉G} 1{p_i(t) ≠ p_i(t−1)} | −0.05 (δ) |
+| N_unrouted(t) (`n_drop`) | active flows (o_i > 0) whose **planned** path is None, i.e. a routing failure; a downtime interruption does not count | −0.1 (η) |
+| N_int(t) (`n_interrupted`) | active flows with a planned path but no actual path (switch downtime) | not in reward |
+
+R_t = U(t) − 0.1 N_sw − 0.05 N_rc − 0.1 N_unrouted (`env.py:205`, weights `env.py:43-48`). N_rep = Σ_t (N_sw + N_rc), as v6 §3.2 states.
+
+---
+
+## 7. Airtime allocation with overlapping domains (`flows.py:71-102`)
+
+The allocation is a one-pass computation without iteration. Inputs are the actual paths π_f, the offered loads o_f of active flows, this step's rates R_ℓ (zero on interrupted links) and the shared channel ch(ℓ).
+
+1. **Link load**: y_ℓ = Σ_{f: ℓ∈π_f} o_f. Every hop carries the flow's full offered load (`flows.py:77-81`).
+2. **Airtime demand** of each loaded directed link: a_ℓ = y_ℓ / R_ℓ (`flows.py:83`).
+3. **Neighbourhood**: k ∈ 𝒩(ℓ) iff ch(k) = ch(ℓ) and some endpoint of k equals, or lies within carrier-sense range (P_rx ≥ −82 dBm) of, some endpoint of ℓ. The relation is symmetric and includes ℓ itself (`flows.py:84-89`). Links on a relay's two radios use different channels and do not interact.
+4. **Domain load** centred on ℓ: D_ℓ = Σ_{k∈𝒩(ℓ)} a_k (`flows.py:90`).
+5. **Budget**: η_ℓ = mac_eff / (1 + κ(n_tx(ℓ) − 1)) = 0.65 with κ = 0 (`flows.py:91`).
+6. **Domain factor**: f_ℓ = min(1, η / D_ℓ) (`flows.py:92`).
+7. **Overlap rule.** A link belongs to the domain centred on every neighbour and takes the tightest factor: g_ℓ = min_{k∈𝒩(ℓ)} f_k (`flows.py:93`).
+8. **Flow service**: x_f = o_f · min_{ℓ∈π_f} g_ℓ (`flows.py:98-101`).
+
+Since every k ∈ 𝒩(ℓ) has g_k ≤ f_ℓ, each domain satisfies Σ_{k∈𝒩(ℓ)} a_k g_k ≤ f_ℓ D_ℓ ≤ η, so no domain exceeds 65% airtime. The rule is work-conserving only in one sense: unloaded co-channel links cost nothing, unlike the static 1/k share (`graph.py:47-64`). Airtime freed when a flow is throttled at another bottleneck is **not** redistributed. Loads are not reduced for upstream throttling, and there is no progressive filling. The allocation is therefore conservative where domains chain. The reported link capacity is cap_ℓ = y_ℓ η / D_ℓ (`flows.py:97`), so the observed load_frac equals D_ℓ/η.
+
+---
+
+## 8. Corrections to the v6 text
+
+1. §3.1, ‘‘Its downlink radio chooses a channel from ℂ={6,11,36,40,44,48}; its uplink follows the downlink channel of its parent.’’
+   → Add: ‘‘A gateway or a node without a parent parks its uplink radio on channel 1. All episodes start with uplink channel 1, downlink channel 6 and minimum-hop parents.’’ (`agents_io.py:65`, `env.py:75-76`.) v6 §3.2 calls this start ‘‘channel pair (0,1)’’; that is the index pair for channels (1, 6).
+
+2. §3.1, ‘‘ordered by hop count and then SNR’’ → ‘‘the four link neighbours with the lowest hop count φ, ties broken by higher SNR and then lower node id.’’ ‘‘A progress mask allows only feasible parents that are closer to a gateway under a potential φ’’ → give φ and M from §3. ‘‘Gateways and nodes with no feasible parent require separate execution rules’’ → replace with the §4 rules.
+
+3. §3.1 writes E_L(t). In the code E_L is fixed by node positions and changes only through node failure. Write E_L, restricted to live nodes.
+
+4. §3.2, ‘‘Reconfiguration interrupts the affected link for one step. In setting (a), affected flows also lose the queues waiting on that path’’ → ‘‘A downlink retune blocks all of the node's links on its new channel, including its children's uplinks, for one step. A parent change blocks the new uplink for one step. In setting (a), a flow whose planned path crosses a blocked link loses the queue it carried into the step; the step's new arrivals are kept.’’ Add q_max = 5μ and the order in §2.
+
+5. §3.3, ‘‘When demand exceeds that limit, the described model reduces the service of affected flows proportionally and allows idle airtime to be reused.’’ → ‘‘An over-subscribed domain scales the offered load of every flow through it by η/D. A link in several domains takes the smallest factor, and a flow takes the smallest factor on its path. Idle co-channel links consume no airtime, but airtime released by throttling elsewhere is not reassigned.’’ Then give steps 1–8 of §7, which also resolve the sentence ‘‘Overlapping domains and queue updates require a precise scheduling rule.’’
+
+6. §3.4, ‘‘x̄_f is throughput averaged over one second’’ → ‘‘averaged over those of the last ten steps (1 s) in which the source had traffic to send.’’ The flow set is the live non-gateways with demand in the window. N_unrouted counts routing failures only, not switch-downtime interruptions.
+
+7. §3.4, ‘‘u_i is the utility associated with flows traversing node i and n_alive is the number of live or available nodes under the implemented convention’’ → use the §5 definitions. u_i sums log(x̄_f + 0.01) over flows whose planned path includes i, gateways included; an unroutable flow is charged at its source. n_alive counts live nodes including gateways. ‘‘the mapping of the local terms in (3) is still to be stated’’ → ‘‘s_i and r^p_i partition N_sw and N_rc. An uplink retune caused by the parent's downlink retune is charged to the parent.’’
+
+8. §4.2, ‘‘The described observations include … candidate feasibility, SNR, rate and load … the text names four candidate descriptors’’ → ‘‘Each slot holds five values: availability, SNR/40, current-channel rate/143.4, domain utilisation and the previous-step delivery ratio (Table C2).’’ Also state that the own-state block is 6 scalars, a 7-way downlink one-hot and a 5-way parent one-hot, and that loads and queues enter unnormalised in Mb/s.
+
+9. §5.1, Proposition 1 assumes ‘‘no later operation overrides that condition’’. The entropy fallback replaces an unsure node's action with Ko's (`agent.py:123-130`). Ko's parent is mapped to a slot without the progress mask (`ko_prior.py:42-53`) and can be an equal-hop neighbour. When Ko drives S6 (seeds 0–9), 2,935 of 35,010 live non-gateway decisions (8.4%) fall outside the mask. The proposition covers the policy's own choices only; fallback nodes need Ko's own loop handling (`ko.py:71-72`). This belongs to comment 3, but the condition is stated here. A related point for the 2-nat threshold: the fallback entropy is H(route) + H(channel) on channel steps and H(route) alone otherwise (`agent.py:126`). With a maximum of log 4 ≈ 1.39 < 2, fallback can fire only on channel steps, every t_c = 10.
+
+---
+
+// Authors' status: RESOLVED – The 38-entry observation (fifth slot descriptor = per-link delivery ratio), q_max = 5μ and the step order, the BFS hop potential and progress mask, the gateway/no-parent rules, u_i, n_alive, the reward counters and the min-over-domains airtime rule are now defined from the code with file:line references, and nine v6 sentences are corrected accordingly.
+
+Response R3. Comment 3 (Section 4): training transition, evaluation epoch, fallback and baselines
+------------------------------------------------------------------------------
+Source of every statement: `mesh/model/agent.py` (`EGATAgent.prepare/act/learn/update/gae/bc_fit`), `mesh/model/egat.py` (`EGATNet.forward`), `mesh/model/ko_prior.py`, `mesh/rl/agents_io.py`, `mesh/rl/train.py`, the baseline files, and the trace `docs/paper/review/c3_trace.py`. The trace's output is in `c3_trace.out.txt`. Setting: final model `runs/v10/ckpt/egat_nogru_s0.pt` (`egat`, `use_gru=false`), n=20, scenario S2, environment seed 0, `airtime=domain, mac_eff=0.65, contention=0.0`, evaluated with `switch_margin=2.0`. Every number below was printed by the trace. The trace rebuilds `EGATNet.forward` one stage at a time and asserts that the result equals the network output. It also asserts that its reconstructed evaluation action equals the output of `agent.act` at every step.
+
+---
+
+## A. Manuscript text for §4 (replaces the "to be confirmed" parts of §4.3–4.6 and Algorithm 1)
+
+### A.1 Candidate slots, prior and mask (common to training and evaluation)
+
+Each node u has four parent slots. They hold link neighbours ordered by hop count to the nearest gateway (ascending), then SNR (descending), then node id, with −1 as padding. A slot is *valid* when it is not padding and its neighbour is alive. A gateway has no valid slot. The progress mask keeps the valid slots whose neighbour is strictly closer to a gateway (hop(v) < hop(u)). When no slot survives (a gateway, or a node that is cut off or dead), slot 0 is forced open so that the softmax is defined. The executed parent for that slot is then decoded to −1 (no parent), because the slot is not valid.
+
+The two heads are computed at every step in this fixed order:
+
+1. Shared encoder → route logits z_r ∈ ℝ⁴ and channel logits z_c ∈ ℝ⁶.
+2. Residual prior: q_r = z_r − κ_r·z_K(c_r^Ko) and q_c = z_c − κ_c·z_K(c_c^Ko). The two scales are separate parameters κ_r = softplus(β_r) and κ_c = softplus(β_c), both initialised to 1 and shared by all nodes. In the s0 checkpoint they are κ_r = 0.703 and κ_c = 0.723. z_K is a per-node z-score taken over the node's finite costs. The slot cost is Ko's Bellman–Ford cost to the gateway through that neighbour, and an invalid slot gets +∞. Before the subtraction, +∞ is replaced by 0.
+3. Progress mask: route logits outside the mask are set to −10⁹. **The prior is applied before the mask.** The channel head has no mask, so all six channels are always selectable.
+
+Example (training, t=10, node 0): the slots are [4, 7, 14, 9] at hops [3, 3, 3, 4] and the node's own hop is 4, so the mask is [1, 1, 1, 0]. The raw logits [1.21, −6.94, 8.54, −1.32] become [1.91, −6.24, 7.78, −1.96] after the prior and [1.91, −6.24, 7.78, −10⁹] after the mask, giving π_p = [0.003, 0, 0.997, 0]. For node 1 (slots [2, 12, 19, −1] at hops [1, 2, 2, –], own hop 2), only slot 0 makes progress, so π_p = [1, 0, 0, 0] with H_route = 0 and log π_p = 0. Gateway 10 behaves the same way: slot 0 is forced, H_route = 0, and its executed next hop is −1.
+
+### A.2 One training transition (`act(explore=True)` → `env.step` → `per_agent_reward` → `learn`)
+
+- **Proposal.** Each node samples j ~ π_p and c ~ π_c independently, from the two masked, prior-adjusted heads. There is no sequential coordination between nodes during training.
+- **Clock.** The channel head is evaluated at every step. On a channel step (t mod 10 = 0, including t=0) the sampled c is executed. On every other step the sample is discarded and c is set to the current radio-1 channel (`cur_chan`).
+- **Executed action.** During training the executed action equals the proposal, apart from that channel hold. **Hysteresis, sequential channel decoding and the Ko fallback are all gated by `explore=False` and never act during training.** The only map from proposal to executed configuration is `decode`: slot → neighbour id (or −1 when the slot is invalid), radio 1 = c+1, and radio 0 = the parent's radio-1 channel. This map does not depend on the parameters. The trace confirms that the executed parent equals slots[j] for every node that has a valid slot.
+- **Stored log-probability.** The trace stores log π_old = log π_p(j) + 1[channel step]·log π_c(c), where both factors come from the masked distribution in A.1 under the parameters used during collection. Node 0 at t=10: −0.0028 + (−1.3272) = −1.3300. The same node at t=11 (a hold step) stores −0.0001, because the channel factor is dropped. `_logp_entropy` recomputes the same quantity in the update, and its value differs from the stored one by at most 5×10⁻⁷. The PPO ratio therefore starts at 1. It refers to the proposal, and the proposal is the action that was executed.
+- **Entropy.** The loss uses H_route + 1[channel step]·H_chan per node, with coefficient 0.01. Node 0 gives 1.605 nats at t=10 and 0.0013 nats at t=11.
+- **Inactive channel head.** On non-channel steps the channel head contributes nothing to the ratio, the surrogate or the entropy bonus, because its log-probability and entropy are multiplied by is_chan = 0. On channel steps it enters through the joint factorised log-probability inside one clipped surrogate. The semi-MDP n-step channel advantage is disabled in this model (`semi_mdp=False`), so both heads share one GAE advantage.
+- **Reward.** r_i uses λ_t, which is annealed linearly from 0.5 to 0.1 over the 100,000-step budget. The trace uses the end-of-training value 0.1. Rewards of dead nodes and their loss weights are set to 0.
+- **Critic, reset and time limit.** v_i = V([h_i, mean_j h_j]). GAE uses b = c = 1 − done. The flag done is raised only at the 200-step episode limit, which is a time limit and not a terminal state of the network. **The time limit is therefore treated as termination:** in the trace, node 0's last-step return target is 1.163, which equals r_T and contains no V(s_T) term. The previous step bootstraps normally (target 3.791). The rollout length is 1,000 and the BC phase is 10,000 steps, both multiples of 200, so every rollout ends with done = 1 and the `_last_value` bootstrap branch never runs. A new episode starts from a new environment and topology, and the GAE trace is cut at done, so no credit crosses a reset. The first state of an episode receives an ordinary GAE target. The recurrent state is reset at t=0, which has no effect when `use_gru=false`. Yuan, Li and Q-neutral likewise multiply their bootstrap by (1 − done), so all learners treat the time limit the same way.
+- **Behaviour cloning (first 10,000 of the 100,000 steps).** Ko acts and its action is stored. The parent target is the slot holding Ko's parent. If that parent is not one of the four slots, or Ko returns no parent, the target is the first valid slot. Ties are broken inside Ko by `argmin`, which picks the lowest node id for parents and the lowest channel index for channels. The route cross-entropy is multiplied by the progress mask at the teacher slot, so a Ko parent that the mask forbids (an equal-hop parent) produces **no** route target. In the trace episode this applied to 50 of 4,000 live-node targets (1.2%). **The channel head is also cloned**, by cross-entropy to Ko's channel on channel steps. The critic is fitted to Monte-Carlo returns of Ko's trajectories, again cut at the time limit. Fitting stops after 20 epochs or when the joint route-and-channel argmax agreement reaches 90%.
+
+### A.3 One deterministic evaluation epoch (`act(explore=False)`, m = 2)
+
+Order of operations at every step:
+
+1. Compute q_r and q_c as in A.1, with the prior applied before the mask.
+2. Hysteresis: add +m to the route logit of the incumbent parent's slot, but only if the incumbent is one of the slots. A masked incumbent stays near −10⁹, so a failed or non-progress incumbent cannot be kept. Add +m to the channel logit of the current radio-1 channel. The margins are added per head, not to a 24-action joint.
+3. Parent: j = argmax of the biased route logits. Ties go to the lowest slot index (torch argmax), but no exact ties occurred: 0 in the S2 epoch.
+4. Channel, on channel steps only: sequential decoding. Nodes are processed in order of depth in the tree defined by the chosen parents, then by node id. Each node takes its highest biased channel score among the channels not already taken by decided, live conflict neighbours. If all six are taken, it takes the least-used one (score − 10³·count). On other steps c = current channel.
+5. Fallback: for each live node, H = H(π_r^m) + 1[channel step]·H(π_c^m), computed on the **biased** distributions from step 2. If H > 2.0, the node's whole action (parent and channel) is replaced by Ko's action. Ko's action is computed on Ko's own tree and is not re-coordinated with the sequential decoder.
+6. `decode` maps the action to the executed (next hop, radio channels). A slot with no valid neighbour becomes −1.
+
+Example (S2, t=10, node 0): the route logits [3.96, −8.17, 4.66, −10⁹] become [5.96, −8.17, 4.66, −10⁹] after the +2 on the incumbent slot 0. Hysteresis therefore keeps parent 4, which would otherwise have been replaced by slot 2. On the channel side, argmax picks c=3, but the sequential decoder moves the node to c=1 because a decided conflict neighbour holds channel 3. The biased entropy is H = 2.141 > 2, so **the fallback fires**. Ko's action is executed instead (next hop 14, channels [6, 2]), which changes the parent that hysteresis had just held.
+
+Counts for the S2 epoch: 4,000 live node-decisions. The fallback fired once, at t=10 on node 0. Hysteresis changed the argmax 6 times for parents and 131 times for channels. The sequential decoder moved 98 channel choices away from the per-node argmax. There were no exact ties.
+
+### A.4 Which entropy, and can the fallback fire?
+
+The code computes the entropy as the **sum of the two factorised head entropies**, evaluated after mask and hysteresis. On channel steps this is H_route + H_chan. On the other nine steps out of ten it is H_route alone (`agent.py` line 126). For independent heads this sum equals the entropy of the 24-action product distribution. Its bound depends on the number k of progress-valid slots: H ≤ ln k + ln 6, which is at most ln 24 = 3.18.
+
+- **Non-channel steps (90% of decisions):** H ≤ ln 4 = 1.386 < 2. **The fallback cannot fire.** The largest value observed was 0.69 nats.
+- **Channel steps with k = 1** (most nodes, and all gateways): H ≤ ln 6 = 1.792 < 2. **It cannot fire.**
+- **Channel steps with k ≥ 2:** the bound is ln 12 = 2.48 or higher, so the fallback can fire, and it does, rarely.
+
+Across suites A+B (11 scenarios, evaluation seed 0, m = 2), the fallback fired on **9 of 43,901 live node-decisions (0.02%)**. All 9 events happened on channel steps and on the same node (node 0, k = 3). Seed 0 gives the same topology in nine of the eleven scenarios, which explains why the events cluster. Ko's action differed from the policy's action in 6 of the 9 events. Ko's parent never fell outside the progress mask (0 of 9), but the code does not guarantee this. The largest biased entropy was 2.20. Without the margin, 24 node-decisions would have exceeded 2 nats, so hysteresis lowers the entropy and suppresses most potential fallbacks. In practice the fallback is a rare, channel-step-only event, not an active safety mechanism.
+
+### A.5 Baseline decision clocks, information, warm start and training resources
+
+| Method | Channel decision | Parent decision | Observation used at execution | Warm start | Training interactions |
+|---|---|---|---|---|---|
+| M0 | never (fixed radio channels (0,1)) | every step, min-hop (lowest id on ties); changes only when the alive set changes | link adjacency, alive flags, gateways | – | none |
+| Ko | every 10 steps (t mod 10 = 0); at any step if some parent breaks | same clock; switches parent only if new cost < 0.9 × current cost | link SNR→rate, load fraction, offered load, conflict graph, current channels; **network-wide Bellman–Ford distances** | – | none |
+| Q-neutral | every step (joint 24 actions) | every step | own 7-tuple discretisation (load bin, unmet, gateway flag, hop bin, radio-1 channel, best-rate slot, rate bin); validity mask without progress | none | 100,000 env steps, 500 episodes (2.0 M agent transitions); tabular update for every live agent; ε 0.6→0.05 over 50 k steps |
+| Yuan | every step (joint) | every step | own 18+20 features, plus dot-product attention over self and the first 3 slots, 2 layers; validity mask without progress | none | 100,000 env steps, 500 episodes; one DQN gradient step (batch 10 from a 10 k replay) per env step; ε 0.6→0.05 over 50 k |
+| Li | every step (joint) | every step | 38 z-scored features, 2-layer GAT over the **conflict** graph; validity mask without progress | none | 100,000 env steps, 500 episodes; one A2C update per env step |
+| Li+H, Yuan+H | as Li / Yuan | as Li / Yuan | as Li / Yuan; at evaluation, +1 for keeping the channel and +1 for keeping the parent on the joint scores | none | same checkpoint as Li / Yuan; m = 1 chosen on validation from {0, 0.25, 0.5, 1, 2, 4, 8, 16} |
+| EGAT+H | every 10 steps (t mod 10 = 0), in training and evaluation | every step | 38 node features + 7 edge features, 2 GATv2 layers over link ∪ conflict; Ko slot and channel costs as prior (**network-wide Bellman–Ford**); progress mask; Ko action as fallback; mean-pooled critic in training only | 10,000 steps of Ko behaviour + BC of both heads and the critic (inside the 100 k) | 100,000 env steps, 500 episodes = 10,000 BC + 90,000 PPO (90 rollouts × 4 epochs × 20 minibatches); m = 2 from {0, 0.5, 1, 2, 3, 4} |
+
+Shared by every learner: training scenarios are drawn uniformly from S1–S6 with a new topology for each episode, n = 20, using the same simulator settings. Checkpoints are validated every 10,000 steps plus once at the end, 11 validations × (11 scenarios × 4 validation seeds × 200 steps) = **96,800 non-learning env steps each**. The checkpoint with the best validation composite is kept. The selected s0 checkpoints are at step 100,000 (EGAT no-GRU), 60,000 (Yuan), 20,000 (Li) and 30,000 (Q-neutral). Weight averaging (EMA with decay 0.9995 per step) is applied to EGAT after BC, and to Li and Yuan from step 1; Q-neutral has none. All learned methods use the same sequential channel decoder at evaluation and none use it in training. The two methods with a 10-step channel clock, Ko and EGAT, have one tenth of the channel-change opportunities of Yuan, Li and Q-neutral, which may change channel at every step. Only Ko and EGAT use network-wide routing distance and enforce strict progress, so the decoder is the only shared component. The comparison is between systems that differ in information, decision clock and warm start, not between encoders.
+
+---
+
+## B. Discrepancies with the v6 text and corrections
+
+1. **§4.6:** "The system also falls back to Ko's action when policy entropy exceeds 2 nats after hysteresis. … A joint 24-action distribution, or a specified sum of head entropies, can exceed it."
+   **Correction:** "At evaluation only, a node falls back to Ko's full action (parent and channel) when H(π_r^m) + H(π_c^m) > 2 nats. Both entropies are computed after the mask and the hysteresis margin, and the channel term is included only on channel steps. Because the bound is ln k + ln 6, the fallback cannot fire on non-channel steps or for nodes with a single progress candidate. Across suites A+B (seed 0) it fired on 9 of 43,901 node-decisions (0.02%), all on channel steps."
+
+2. **§4.3:** "The parent head is evaluated every step, while the channel head is evaluated every ten steps."
+   **Correction:** "Both heads are computed at every step. A channel decision is taken only at t ≡ 0 (mod 10), including t = 0. In between, the radio-1 channel is held, and the channel head's output is excluded from the action, the log-probability and the entropy."
+
+3. **§4.5, Eq. (9) and** "At a time-limit boundary, bootstrapping and continuing a trace need not have the same convention."
+   **Correction:** "The implementation uses b = c = 1 − done, and done is set only at the 200-step time limit. The time limit is therefore treated as termination, with no bootstrap from V(s_T). Each 1,000-step rollout ends on an episode boundary, so no rollout-end bootstrap occurs. All learners use the same convention."
+
+4. **§4.5:** "The described actor warm start fits parent choices by cross-entropy … This formulation does not imply that the channel head is cloned in the same way."
+   **Correction:** "BC fits the parent head by cross-entropy to Ko's slot, except where the progress mask forbids it (1.2% of targets in the trace). It also fits the channel head by cross-entropy to Ko's channel on channel steps, and the critic to Ko's Monte-Carlo returns. The 90% stopping rule applies to joint route-and-channel agreement. The 10,000 BC steps are part of the 100,000-step budget."
+
+5. **§4.4:** "The initial scale is described as one; its exact sharing across heads or contexts must follow the released implementation."
+   **Correction:** "There are two scales, κ_r = softplus(β_r) and κ_c = softplus(β_c), each initialised to 1 and shared by all nodes. After training (s0) they are 0.703 and 0.723. z_K is a per-node z-score over finite costs. The prior is applied before the progress mask."
+
+6. **§4.6, Eq. (10)**, q_H(a) = q(a) + m·1{a = a_old}: for EGAT the margin is added separately to the incumbent parent slot and the incumbent channel. For Li and Yuan it is added as +m (keep channel) and +m (keep parent) on the joint scores. Both are additive per component, but the per-step channel opportunity differs: every step for Li and Yuan, every tenth step for EGAT.
+
+7. **Proposition 1 (§5.1)**, "no later operation overrides that condition": the Ko fallback is such a later operation. It can install a parent that is not progress-valid (equal hop). This did not happen in the trace (0 of 9 fallbacks), but the code does not prevent it. Either state the proposition for decisions without fallback or add the mask to the fallback.
+
+8. **§4.6, Algorithm 1:** replace steps 3–4 with the exact order in A.3. Add that in training, steps 2–5 of A.3 (hysteresis, sequential decoding, fallback) are absent, so training is consistent with the action it executes. The policy is then deployed under execution rules it was not trained with, and the effect of those rules is measured only by validation.
+
+9. **§4.5:** "Moving-average weights are maintained": EMA is also applied to Li and Yuan, but not to Q-neutral. Each learner also uses 96,800 non-learning validation env steps for checkpoint selection, plus the margin-selection runs for the +H variants.
+
+// Authors' status: RESOLVED – The trace (`c3_trace.py`/`.out.txt`) gives the exact training and evaluation order from the code. Training executes the sampled factorised proposal, with log π_p(j) + 1[channel step]·log π_c(c) stored and the inactive channel head excluded, and the time limit treated as termination. The 2-nat fallback uses the sum of the two biased head entropies, so it can fire only on channel steps for nodes with at least two progress candidates (9 of 43,901 decisions); §4.3–4.6, Eq. (9), BC and the baseline-resource table are corrected accordingly.
+
+Response R4. Comment 4 (Section 5): complexity, latency, memory and communication
+------------------------------------------------------------------------------
+Scope: Section 5.3 of the revised manuscript (`egat-mappo-v6.txt`, lines 280–295) and the related sentences in Sections 4 and 8.3. Model: final checkpoint `runs/v10/ckpt/egat_nogru_s0.pt` (EGAT, GRU off, two layers, H = 4, d = 64), executed with switch margin m = 2.0. Benchmark: `docs/paper/review/c4_bench.py`; raw output: `docs/paper/review/c4_bench.out.txt`.
+
+Notation: n nodes; E_L directed link edges; E_C directed conflict edges; E = |link ∪ conflict| + n self-links (the attention neighbourhood); L = 2 layers; d = 64; C = 6 downlink channels; P = K = 4 parent slots; h = height of the parent tree; I_BF = Bellman–Ford rounds until the distances stop changing (≤ n).
+
+## 1. What the implementation does
+
+| Item | Implementation (file:line) | Cost per decision |
+|---|---|---|
+| Edge tensor | Dense. `prepare` allocates `e = zeros(n, n, 7)` and scatters the sparse `edge_index` into it (`mesh/model/agent.py:54-55`). The adjacency is a dense n×n boolean mask with self-loops (`agent.py:56-59`). | O(n²) time and storage |
+| Observation views | `edge_matrix` builds a dense n×n array for each feature it is asked for (`mesh/sim/env.py:35-40`). It is called about 10 times per decision: `neighbor_slots`, `agent_features`, `ko_route_via`, `ko_channel_costs` and `sequential_channels`. The edge list itself comes from `np.nonzero` over n×n (`env.py:230`). | T_obs = O(n²) |
+| Attention layer | Dense GATv2. `z = s + t` broadcasts to (B, n, n, H, d/H) (`mesh/model/egat.py:80`). The edge projection runs on the full n×n×7 tensor (`egat.py:82`). The softmax runs over all n columns, with non-edges set to −∞ (`egat.py:84`). Aggregation is a dense einsum over j (`egat.py:85`). | O(nd² + n²d) per layer; activations O(n²d) |
+| Heads and critic | Two MLPs (64 → 64 → C or K). The centralised critic is also evaluated on every inference call (`egat.py:119-121`), although execution does not use its output. | O(nd² + nd(C+K)), plus O(nd·128) for the critic |
+| Ko prior, routing part | `ko_slot_costs` → `ko_route_via` runs dense synchronous Bellman–Ford (`mesh/baselines/ko.py:31-36`) with up to n rounds of an n×n min. | O(I_BF·n²), worst case O(n³) |
+| Ko prior, channel part | Python loops over nodes and channels (`mesh/model/ko_prior.py:35-38`), each doing a dense row mask. | O(n²C) |
+| Ko cost normalisation | Per node, a z-score over that node's finite candidate costs, with ε = 1e-6 (`ko_prior.py:9-17`). Invalid slots stay at +∞, become 0 through `nan_to_num`, and are then removed by the slot mask (`egat.py:116-118`). The two scales are separate, softplus(β_c) and softplus(β_r), each initialised to 1 and shared across nodes (`egat.py:101-103`). | O(n(C+K)), negligible |
+| Progress potential φ | Hop count to the nearest gateway, from BFS in `hops_to_gateway` (`mesh/sim/flows.py:7-20`). It scans dense rows (`np.flatnonzero(adj[u])`) and is recomputed in every observation (`env.py:222`), although it only changes when a node fails. The progress mask is then O(nK) (`agent.py:40-47`). | O(n²) as implemented; O(n + E_L) with adjacency lists |
+| Parent decoding | Hysteresis bias, then argmax over K slots (`agent.py:105-114`). | O(nK) |
+| Channel decoding | `sequential_channels` (`mesh/rl/agents_io.py:110-133`): depth by pointer chasing (`:122-127`), a sort by (depth, id) (`:130`), then for each node a dense conflict-row scan with `bincount` (`:131`). It runs on every step, including the nine of ten steps where its output is discarded (`agent.py:115-120`). | O(n·h + n log n + n² + nC) |
+| Entropy fallback | If any node's entropy exceeds 2 nats, the full Ko action is computed for the whole network (`agent.py:126-130`). On channel steps that is another Bellman–Ford and Ko's tree-ordered channel pass. | O(I_BF·n² + n·h + n²C), only when triggered (measured rate ≈ 10⁻⁴) |
+| Encoder caching | None. Each 100 ms step reruns `prepare` and the full forward pass (`agent.py:86-90`). The GRU is disabled in the final model, so `h_prev` is unused. Embeddings are not reused across the nine route-only steps between channel decisions. | T_episode = T_steps × T_exec (200 steps) |
+
+Corrected per-decision bound (centralised simulation of all n agents):
+
+    T_exec = O( L(nd² + n²d) + nd² + nd(C+K) + I_BF·n² + n²C + n·h + n log n + n² )
+           = O( n²(Ld + I_BF + C) + nd²(L+1) ),   with I_BF ≤ n (worst case O(n³)).
+
+Storage, excluding weights: O(n²(d + 7)) at inference, because the two layers run one after the other under `no_grad` and so only one layer's n×n×d buffer is alive at a time. In training it is O(B·L·n²d) for a minibatch of B = 50 transitions, since autograd keeps every layer's buffers. Weights: 29,132 actor parameters and 16,641 critic parameters (45,773 in total), which matches O(Ld² + 38d + 7Ld + d(C+K)).
+
+Training term: O(K_ep·B·[L(nd² + n²d) + nd² + nd(C+K)]) per update. The Ko prior is computed once per stored transition, not once per epoch.
+
+Sequential decoding is one O(n) centralised loop, not n separate forward passes. It is still inherently sequential, however. Node u can only choose after every conflict neighbour that comes earlier in the total (depth, id) order. So in a distributed realisation the number of rounds equals the longest chain in that precedence DAG. That chain is generally longer than the tree height, because conflicting nodes at the same depth are serialised by id (Section 2).
+
+## 2. Measurements
+
+Hardware: 13th Gen Intel Core i5-13450HX (10 cores: 6 P + 4 E, 16 threads), 31.7 GB RAM, NVIDIA GeForce RTX 5060 Laptop GPU (8 GB). Windows 11 (10.0.26300), AC power, Balanced power plan. Python 3.12.10, PyTorch 2.11.0+cu128, NumPy 2.4.3.
+
+Protocol: n = 20 (S2), 50 (C3) and 80 (C4). All are random geometric graphs with 2 gateways and a mean load of 10 Mb/s. For each n: 2 episodes × 200 steps (seeds 0 and 1), with the first 10 steps of each episode discarded, giving 380 decisions. Latency is wall time of `agent.act(obs)`: observation tensors, Ko prior, progress mask, encoder, heads, hysteresis, sequential decoding and fallback. `env.step` is excluded. All n agents are computed in one centralised call.
+
+CPU runs used one thread (`torch.set_num_threads(1)`, OMP/MKL = 1), and the process was pinned to one P-core logical CPU. Without pinning, medians varied 3–6× between repeated runs as Windows moved the thread between core types. Each configuration ran in its own subprocess. No other Python process was running, and system CPU load was 11–32%, as logged in the output file.
+
+| n | Device | Median (ms) | p95 (ms) | Max (ms) | Prepare, of which Ko prior (ms) | Forward (ms) | Peak RSS (MB) | CUDA peak (MB) | NumPy heap peak (MB) |
+|---|---|---|---|---|---|---|---|---|---|
+| 20 | CPU, 1 thread | 10.6 | 12.7 | 49.9 | 5.0 / 4.2 | 2.9 | 547 | – | 0.10 |
+| 50 | CPU, 1 thread | 20.3 | 24.9 | 65.9 | 11.1 / 9.8 | 5.3 | 551 | – | 0.43 |
+| 80 | CPU, 1 thread | 32.1 | 36.9 | 47.6 | 18.1 / 15.9 | 10.1 | 555 | – | 0.94 |
+| 20 | RTX 5060 | 19.0 | 26.7 | 77.5 | 5.2 / 4.1 | 9.9 | 1150 | 10.0 | 0.10 |
+| 50 | RTX 5060 | 24.8 | 35.2 | 55.4 | 11.5 / 10.7 | 8.0 | 1151 | 11.6 | 0.43 |
+| 80 | RTX 5060 | 33.0 | 41.5 | 63.0 | 18.3 / 16.5 | 7.5 | 1153 | 14.6 | 0.95 |
+
+Notes on the table:
+- The prepare, Ko prior and forward columns are medians over a subsample of every 20th decision.
+- Peak RSS is the peak working set (`psutil`). Most of it is the PyTorch import baseline (about 545 MB) or the CUDA context (about 1.15 GB). The change from n = 20 to n = 80 is +8 MB.
+- The NumPy heap peak comes from `tracemalloc`, which does not trace PyTorch tensors. The CUDA peak is `torch.cuda.max_memory_allocated` and counts every tensor allocation.
+- The analytical sizes of the dense buffers are 0.011, 0.067 and 0.171 MB for the edge tensor (n²·7·4 B), and 0.10, 0.61 and 1.56 MB for one GAT pairwise buffer (n²·d·4 B).
+
+Scaling: from n = 20 to n = 80 (4×), CPU latency grows 3.0×. The Ko prior grows 3.8× and the encoder 3.5×. The Ko prior and observation construction take about 55% of the step; the network forward takes about 30%. At these sizes the GPU is no faster: the forward pass is dominated by launch and transfer overhead, and the NumPy preparation stays on the CPU.
+
+Topology and communication (graph statistics: evaluation seeds 0–19; tree and decoding statistics: the decoded parent trees of the 380 timed decisions):
+
+| Quantity | n = 20 | n = 50 | n = 80 |
+|---|---|---|---|
+| E (attention edges incl. self) / n² | 0.57 | 0.26 | 0.18 |
+| Attention neighbours per node, mean (max), excl. self | 10.3 (19) | 12.2 (23) | 13.2 (30) |
+| Link neighbours per node, mean | 5.0 | 5.6 | 5.8 |
+| Conflict neighbours per node, mean (max) | 10.3 (19) | 12.2 (23) | 13.2 (30) |
+| Hop eccentricity to gateway (BFS rounds for φ), median (max) | 3.5 (5) | 7 (11) | 8 (12) |
+| Bellman–Ford rounds for the Ko prior, median (max) | 4.5 (6) | 8 (12) | 9 (13) |
+| Decoded tree levels (incl. gateway level), observed values | {3, 5} | {7, 11} | {7, 11} |
+| Sequential channel-decoding rounds (critical path), median (max) | 13 (15) | 31.5 (32) | 30.5 (37) |
+| Fallback rate (fraction of node decisions) | 1.3×10⁻⁴ | 5×10⁻⁵ | 3×10⁻⁵ |
+
+The tree is constant within each evaluated episode, so the tree-level values are per seed (2 seeds). The hop eccentricity over 20 seeds is the broader estimate of tree height.
+
+Messages per node per decision, for a decentralised realisation of the same computation (each round is one local broadcast per node):
+- Encoder: L = 2 rounds. In each round a node broadcasts its 64-float embedding (256 B in fp32) and receives one from each attention neighbour: about 21, 24 and 26 received vectors per decision at n = 20, 50 and 80.
+- Ko prior: I_BF distance-vector rounds of one scalar from each link neighbour, plus one round of channel and load state from conflict neighbours.
+- Channel decoding (channel steps, every 10th step): critical-path rounds, with one channel announcement per node, received by its 10–13 conflict neighbours on average.
+- Potential φ: BFS rounds equal to the eccentricity, needed only after a topology change.
+
+Dependent message rounds per decision (median): route-only steps 7.5, 11 and 12; channel steps 20.5, 42.5 and 42.5 at n = 20, 50 and 80.
+
+## 3. Is a real-time claim supported (100 ms decision step)?
+
+- **Computation: yes.** The centralised simulation of all n agents takes 10.6 / 20.3 / 32.1 ms median and 12.7 / 24.9 / 36.9 ms p95 on one CPU thread at n = 20 / 50 / 80, with no step above 66 ms. That is within the 100 ms step, with margin, for this checkpoint and these graph sizes.
+- **Deployment: no.** A decentralised channel decision at n = 50–80 needs about 42 dependent message rounds, about 30 of them for the sequential channel decoding. That leaves roughly 2.4 ms per multi-hop wireless round, including channel access. We have not measured round latency over the air, so a deployment-level real-time claim is not supported.
+- **Scalability claim:** the code's cost is quadratic in n, through the dense edge tensor, dense attention and dense Bellman–Ford. The decoding critical path grows with conflict density, not only with tree height. The measured growth (3.0× latency for 4× n) is consistent with this quadratic cost at small n. It does not establish near-linear scaling.
+
+## 4. Discrepancies with the v6 text and corrections
+
+1. v6: "Given graph features and precomputed node projections, a sparse GAT layer costs O(nd²+Ed), including edge projection up to the fixed input width."
+   Correction: "The implemented GATv2 layer is dense. Edge features are scattered into an n×n×7 tensor, and attention is evaluated over all n² pairs with non-edges masked to −∞. One layer therefore costs O(nd² + n²d), including the 7→d edge projection on all n² entries. A sparse implementation would cost O(nd² + Ed)."
+
+2. v6: "T_enc=O(L(nd²+Ed))." (11)
+   Correction: "T_enc = O(L(nd² + n²d)) for the implementation (O(L(nd² + Ed)) only for a sparse one)."
+
+3. v6: "Under a decoder that sorts nodes once and scans edges using channel-used sets, its work is O(n log n+E+n(C+P))."
+   Correction: "The implemented decoder computes each node's tree depth by following parent pointers (O(nh)), sorts nodes by (depth, id) once (O(n log n)), and scans a dense conflict row for each node (O(n²)). Its work is O(nh + n log n + n² + n(C+P)). It runs on every step, but its channel output is applied only on channel steps."
+
+4. v6: Eq. (12), "T_exec=O(L(nd²+Ed)+nd²+nd(C+P)+n log n+E+n(C+P))+T_K+T_φ+T_obs."
+   Correction: "T_exec = O(L(nd² + n²d) + nd² + nd(C+P) + nh + n log n + n²) + T_K + T_φ + T_obs. Here T_K = O(I_BF·n² + n²C), from Ko's dense Bellman–Ford over I_BF ≤ n rounds plus the channel-cost loop, and is paid on every step. T_φ = O(n²), from BFS hop counts over dense adjacency rows, recomputed every step. T_obs = O(n²). With I_BF ≤ n, the worst case is O(n³); in the evaluated topologies I_BF ≤ 13."
+
+5. v6: "Episode cost depends on when embeddings are recomputed or cached."
+   Correction: "Embeddings are not cached. Observation construction, the Ko prior and the full forward pass are recomputed at every 100 ms step, including the nine route-only steps between channel decisions, so episode cost is 200·T_exec."
+
+6. v6: "T_obs can be quadratic if all node pairs are examined, even when the retained graph is sparse."
+   Correction: "T_obs is quadratic in the implementation: the edge list and every per-feature view are built from n×n arrays, about ten times per decision."
+
+7. v6: "A BFS potential on an unweighted graph would cost O(n+|E_L|), but that bound cannot be assigned to a different routing routine merely because both produce parent candidates."
+   Correction: "The progress potential φ is the BFS hop count to the nearest gateway on the link graph. It costs O(n²) as implemented (dense rows) and O(n + |E_L|) with adjacency lists. It is recomputed every step but changes only on node failure. The Ko prior uses a separate Bellman–Ford routine with load-dependent costs, O(I_BF·n²)."
+
+8. v6: "With fixed layer/head counts, sparse feature and activation storage is O(nd+E(d+7)+n(C+P)), apart from model weights."
+   Correction: "Storage is O(n²(d+7) + n(C+P)) at inference, from the dense edge tensor and one layer's pairwise buffer, and O(B·L·n²d) in training, apart from model weights."
+
+9. v6: "The supplied architecture depicts an n×n×7 edge tensor; materializing such a tensor requires quadratic storage regardless of the number of useful edges. Dense attention can similarly require O(Ln²d) activations."
+   Correction: "The code does materialise this n×n×7 tensor and evaluates attention densely. At n = 80, E/n² = 0.18, so about 82% of the pairwise work is masked."
+
+10. v6: "Shared projection/head weights contribute O(Ld²+38d+7Ld+d(C+P)), plus any separate prior and training critic."
+    Correction: add "29,132 actor and 16,641 critic parameters. The prior has two scalar parameters. The critic is evaluated at inference in the released code but is not used for execution."
+
+11. v6: "where z_K denotes the implemented cost normalization. The initial scale is described as one; its exact sharing across heads or contexts must follow the released implementation."
+    Correction: "z_K is a per-node z-score over that node's finite candidate costs, (c − mean)/(std + 10⁻⁶). Infeasible candidates receive no prior and are masked. Constant rows give 0. The channel and parent heads have separate scales, softplus(β_c) and softplus(β_r), each initialised to 1 and shared across nodes."
+
+12. v6: "Two graph layers entail two aggregation dependencies, not necessarily two physical message rounds: neighbor discovery, potential dissemination and sequential decoding can require further communication."
+    Correction: append "In the evaluated topologies a decision needs 2 embedding rounds, 1 state round and 4.5–9 Bellman–Ford rounds (median) for the Ko prior. On channel steps it also needs 13–31.5 sequential decoding rounds (median, critical path of the (depth, id) order over conflict edges). That is three to four times the tree height, because conflicting nodes at equal depth are serialised."
+
+13. v6 (8.3): "The study also does not measure radio reconfiguration on hardware, coordination-message cost or wall-clock inference deadlines."
+    Correction: "The study measures simulated inference latency: 10.6 / 20.3 / 32.1 ms median and 12.7 / 24.9 / 36.9 ms p95 for all agents at n = 20 / 50 / 80, on one thread of an Intel i5-13450HX. It also counts coordination rounds, about 42 dependent rounds per channel decision at n = 50–80. It does not measure radio reconfiguration on hardware or over-the-air message latency, so no deployment real-time claim is made."
+
+// Authors' status: RESOLVED – the bounds now follow the dense implementation (O(n²) attention and observation, an O(I_BF·n²) Ko prior, no caching, and a decoding critical path longer than the tree height), and the 20/50/80-node latency, memory and communication measurements show that computation fits the 100 ms step while deployment real-time is not claimed.
+
+Response R5. Comments 5 and 7 (Sections 6.4 and 7): reconstruction of the comparisons and Tables 5-9
+------------------------------------------------------------------------------
+Scope: reconstruct the Ko, Yuan+H and ns-3 comparisons and Tables 5–9 from the recorded outputs. No new simulation was run.
+
+- **Regenerate:** `python docs/paper/review/reconstruct_tables.py` (run from the repo root with `PYTHONPATH=.`).
+- **Output:** written to `docs/paper/review/reconstruct_tables.out.md`, with every value printed to 6 decimals and the run/configuration of each table taken from the suite files themselves (commit, scenario overrides, agent overrides, evaluation seeds).
+- **Code path:** all values go through `mesh/eval/composite.py`, the module that produced the reports cited in the manuscript.
+
+## 1. N_rep (reconciled first)
+
+N_rep is the field `stability`. Its definition is in the code:
+
+- **Per step** (`mesh/sim/env.py`, step function):
+  - `n_channel_switch` counts radio retunes over the n×2 channel matrix (uplink and downlink radios), alive nodes only.
+  - `n_route_change` counts parent changes of traffic sources.
+- **Per episode** (`mesh/eval/run.py`): both counters are summed over the 200 steps.
+- **Score** (`mesh/eval/composite.py`, `_means`): `stability = n_channel_switch + n_route_change`.
+
+**What one decision costs.** A downlink change counts once for the node's downlink radio. Each child's uplink radio follows the parent's downlink, so each child that stays on that parent adds one more count. A parent change counts once as a route change, plus one uplink retune if the new parent uses a different channel.
+
+**Bound.** The bound is therefore T(2n + n_src), not 2nT:
+- n = 20 with 2 gateways: 200 × (40 + 18) = 11,600.
+- n = 80 (C4): 200 × (160 + 78) = 47,600.
+
+The largest recorded values are within it: Q-neutral S4 8,219.9 and C4 34,885.
+
+**Common start state.** Every episode starts from the same assignment: all nodes on channel pair (0, 1) with min-hop parents (`MeshEnv.reset`). Step 1 therefore counts each method's departure from that common start. M0 keeps it, so M0 shows 0 except after the S6 relay failure.
+
+**Same counter for every method.** The counter is the same for every method:
+- Every simulator method (M0, Ko, Q-neutral, Li, Yuan, Li+H, Yuan+H, EGAT) is evaluated through `run_episode` on `MeshEnv`.
+- The ns-3 environment uses the identical expression (`mesh/ns3/env.py`, `n_sw = ((channels != self.channels) & alive).sum()`).
+
+No score changes. The paper only needs the definition above in place of "one count per binary action change". Split of the reported 0–19 means:
+
+| method | channel retunes | route changes | N_rep |
+|---|---|---|---|
+| Ko | 456.90 | 158.61 | 615.51 |
+| Yuan+H | 40.26 | 3.06 | 43.32 |
+| EGAT+H | 39.48 | 2.76 | 42.25 |
+| Q-neutral | 6263.29 | 1787.22 | 8050.51 |
+
+## 2. Aggregation order and the zero-reference rule
+
+**Steps 1–2: per episode** (one topology, one trained model):
+1. Throughput, Jain and P5 are computed every step. Each is then averaged over the 200 steps. Jain and P5 use the 1-s window throughput of flows that had demand in the window.
+2. Loss is total lost traffic over total demand. N_rep is a sum over the episode, as in section 1.
+
+**Steps 3–6: one comparison, one scenario.**
+
+3. **Pooled-mean estimand** (Table 7, the "mean" column of the reports): each metric is averaged over all runs of the method in the scenario.
+4. Relative terms (13) are formed from those scenario means and clipped to [−1, 1].
+5. The terms are weighted (14) and summed. Scenarios are then averaged with equal weight over the 11 A+B scenarios.
+6. **Seed-pair estimand** (Tables 5, 8, 9 and every interval):
+   - For each pair (our training seed i, reference training seed j), metrics are averaged over the 20 topologies of that pair.
+   - Runs are matched by evaluation topology. The score is formed as in steps 4–5 and averaged over scenarios, giving a 5×5 matrix.
+   - The reported value is the matrix mean.
+   - M0 and Ko are deterministic: their single output file enters once per training seed, so their matrix columns are identical.
+
+**Zero-reference rule** (`delta` in `composite.py`):
+- For a higher-is-better metric with reference value exactly 0, the term is 0 if ours is also 0, otherwise sign(ours), i.e. +1 after clipping.
+- Q-neutral's mean P5 is exactly 0 in every A+B scenario (printed in the output file), so its P5 term is +1 × 0.20 for every method.
+- Loss uses max(L_R, 0.01).
+- N_rep uses N_R + 1.
+- No other epsilon is applied.
+
+## 3. Interval calculation and its dependence assumptions
+
+The interval is `seed_matrix_ci` in `composite.py`. With m the 5×5 matrix:
+
+- v_o = var(row means)/5 and v_r = var(column means)/5.
+- Half-width = t_{0.975, df} √(v_o + v_r), with Welch–Satterthwaite df from the two variance terms.
+- For deterministic references v_r = 0, so df = 4.
+
+Assumptions, which the manuscript text already describes correctly:
+- **What the variance counts.** The row and column means are treated as two independent samples of training-seed effects, one per method, with additive effects. The 25 pairs are not treated as independent. Only between-seed variance enters, through the 5 row means and 5 column means.
+- **What is fixed.** The interval is conditional on the evaluated topology cohort; topology-sampling variance is excluded.
+- **Reused checkpoints.** Seeds 0–2 of our model are the ablation checkpoints, so the 40–59 interval is conditional on those trained models.
+- **No joint coverage.** Each interval is a separate 95% interval; there is no simultaneous adjustment across comparisons.
+- **Per-scenario tests.** The Wilcoxon and bootstrap tests are diagnostics conditional on the trained models.
+
+## 4. Reconstructed key comparisons (full precision)
+
+| comparison | point | 95% interval | df |
+|---|---|---|---|
+| vs Ko, 0–19 | +0.260296 | [+0.230390, +0.290203] | 4.00 |
+| vs Ko, 40–59 | +0.245951 | [+0.215532, +0.276371] | 4.00 |
+| vs Yuan+H, 0–19 | +0.085097 | [+0.042557, +0.127636] | 8.00 |
+| vs Yuan+H, 40–59 | +0.066841 | [+0.031338, +0.102345] | 7.42 |
+| ns-3 RTS/CTS vs Ko | +0.230892 | [+0.154543, +0.307241] | 4.00 |
+| ns-3 RTS/CTS vs Yuan+H | +0.164388 | [+0.003731, +0.325044] | 5.22 |
+| ns-3 base MAC vs Ko | +0.218016 | [+0.143806, +0.292227] | 4.00 |
+| ns-3 base MAC vs Yuan+H | +0.183524 | [+0.021179, +0.345870] | 5.02 |
+
+Every value in manuscript v5 Tables 5, 6, 8 and 9 rounds to these outputs. The only differences are in Table 7, section 5.
+
+## 5. Table 7 and the 0.093 vs 0.094 value
+
+The full-precision pooled-mean composite against Yuan+H is +0.092766. That is the 0.093 of the standalone summary and of `runs/v10/final/composite_a_nogru_test.md`.
+
+The 0.094 in the DOCX decomposition came from `docs/paper/figures/make_figures.py` (`decomposition()`):
+- That function read the per-metric scenario means from the markdown report, where they are printed to 3 decimals, and recomputed the terms from those rounded means.
+- Recomputing that way gives +0.093741, which displays as 0.094.
+
+The error is rounding of the inputs, not a different estimator. The terms recomputed from the full-precision outputs sum exactly to the report value for every reference (output file, Table 7).
+
+Corrections to Table 7 (from full precision; other rows are unchanged at 3 decimals):
+
+| reference | Throughput | Jain | P5 | Loss | N_rep term | Total |
+|---|---|---|---|---|---|---|
+| Yuan | +0.018 | +0.005 | +0.035 | **+0.060** (was 0.061) | +0.126 | +0.244 |
+| Yuan+H | +0.016 | −0.000 | +0.024 | **+0.049** (was 0.050) | +0.004 | **+0.093** (was 0.094) |
+
+The §7.2 text follows from this. The N_rep term is 0.138740 of 0.260296 against Ko, which is **53.3%** (manuscript says 53.5%). The remainder is **0.122** (manuscript says 0.121).
+
+The fix in the code: `decomposition()` should load the suite JSONs, as `reconstruct_tables.py` does, instead of parsing the rounded markdown.
+
+## 6. Run/configuration per table
+
+Each table's file list, commit, overrides and margins are printed under the table in the output file.
+
+Common configuration:
+- **Simulator:** `airtime=domain, mac_eff=0.65, contention=0.0` (`runs/v10/calib.env`), setting (a) unless stated.
+- **Margins:** EGAT+H `switch_margin=2`, EGAT+GRU+H 2, Li+H and Yuan+H 1.
+
+| Table | Outputs used |
+|---|---|
+| 5 | `runs/v10/t{0-4}/a`, `runs/v10/fresh/t{0-4}/a`, `runs/v10/fresh2/t{0-4}/a`, heuristic file `t0/a/suite_heur.json` of each set |
+| 6, 7 | `runs/v10/t{0-4}/a` |
+| 8 | ablation checkpoints evaluated at margin 2 (`runs/v10/abl_m2.sh`): `runs/v10/t{0-2}/a/suite_egat_{noedge,nogru,noko,nobc}.json`, full GRU = `suite_egat_h2` seeds 0–2, Yuan+H seeds 0–4 |
+| 9 | simulator = Table 5 files restricted to S2/B1/B3; ns-3 = `runs/ns3/v10` (RTS/CTS) and `runs/ns3/v10base` (base MAC), topologies 0–4, `suite_{egat_nogru_h,egat_h2,rl,li_h,yuan_h}.json`, heuristic file `suite_base.json` |
+
+The suites record the commits they ran at (8aaaf1c, 75d17f8, 65c49b6, c7c16c7). The `runs/` folder is not in git, so the supplement for comment 6 must archive it.
+
+## 7. Unfavourable results kept
+
+- **Jain:** EGAT+H 0.786, below Li+H (0.802) and M0 (0.893), and marginally below Yuan+H (0.787).
+- **High-load loss, group C:**
+
+  | scenario | EGAT+H loss | EGAT+H throughput (Mb/s) | Ko loss | Yuan+H loss |
+  |---|---|---|---|---|
+  | C3 | 0.656 | 73.6 | 0.738 | 0.671 |
+  | C4 | 0.776 | 71.0 | 0.835 | 0.789 |
+
+  The +0.465 and +0.469 composites coexist with severe congestion.
+- **ns-3 S2:**
+  - With RTS/CTS, Ko has higher Jain (0.722 vs 0.693) and P5 (1.318 vs 1.292).
+  - Without RTS/CTS, Ko also has higher throughput (66.355 vs 63.816 Mb/s) and P5 (1.084 vs 0.955).
+- **Yuan+H margin:**
+  - The ns-3 RTS/CTS lower bound against Yuan+H is +0.0037.
+  - The 40–59 lower bound against Yuan+H (+0.031) is below +0.05.
+  - The +0.10 criterion is not met against Yuan+H.
+- **Fresh set 20–39:** the comparison with the GRU model spans zero: +0.0396 [−0.0117, +0.0909].
+
+No outcome changes, so the abstract and conclusions need no change from this reanalysis. Only the Table 7 values above and the N_rep definition change.
+
+Response R6. Comment 6 (Section 6.5): versioned supplement
+------------------------------------------------------------------------------
+> // Please provide one versioned supplement containing the exact code, configuration, model checkpoints, environment/build records, full-precision outputs and dated protocol history. [...] The private repository listed in the README was not accessible during this review, so access or an archive is still needed.
+
+## Manuscript text (§6.5 / Supplement S1)
+
+**Supplement S1 (study archive).** All results in this paper come from one archive, `NW14_EGAT_supplement_fb58cad.zip` (about 247 MB), which can be read without access to the project repository. No model was retrained to build it. It contains:
+
+- `code/`: a `git archive` of commit `fb58cad`, covering the simulator, training and evaluation code, the ns-3 bridge (`ns3/mesh_bridge.cc`, `ns3/build.sh`, `ns3/calibrate.py`), the protocol documents and the scripts that build the tables and figures.
+- `runs/v10/`: the full-precision outputs of the study. These are all model checkpoints (`ckpt/*.pt`, final and every 10k-step validation checkpoint, with training logs), the simulator calibration (`calib.env`: `airtime=domain`, `mac_eff=0.65`, `contention=0`), every evaluation-suite JSON for settings (a) and (b), the composite reports (`final/`), the timestamped event log (`events.log`) and the shell scripts that launched each stage.
+- `runs/ns3/v10/` (RTS/CTS) and `runs/ns3/v10base/` (base MAC, no RTS/CTS): the ns-3 suite JSONs and logs, together with the ns-3 run scripts and event log. Each suite JSON records the commit, scenario overrides, agent overrides and evaluation seeds. The ns-3 files also record the bridge binary and MAC options.
+- `MANIFEST.md`: the commit, a SHA-256 hash for every checkpoint and suite JSON, the environment (Python 3.12.10, torch 2.11.0+cu128, full `pip freeze`, ns-3.47 built with g++ 13.3.0 and CMake 3.28.3 under WSL Ubuntu, the SHA-256 of the bridge binary, and the build script), the seed map, settings, ablation files, MAC settings, the dated protocol history, and the command that regenerates each table and figure.
+
+**Seed map.** Every learner uses training seeds 0–4. The three-seed ablation uses seeds 0–2. Checkpoint and hysteresis-margin selection use validation topologies 1000–1003 only. Topologies 0–19 are the exploratory test set, 20–39 are fresh topologies, and 40–59 are the pre-registered confirmation set. The simulator airtime model was fitted against ns-3 on S2 and B3, with B1 held out. The ns-3 evaluation covers S2, B1 and B3 on topologies 0–4. The heuristics M0 and Ko are deterministic, so one output file per setting is reused for every training seed.
+
+**Settings and MAC configurations.** Setting (a) drops the queue of a device that leaves a channel. Setting (b) adds `queue_preserve=true`, which keeps queues across a channel switch and re-forwards them on the new route. The ns-3 runs use 802.11ax at 20 MHz with A-MPDU (65,535 B) and A-MSDU off. The RTS/CTS configuration is `{"rts": 1}` and the base configuration is `{}`. The three-seed ablation (margin 2) consists of checkpoints `egat_{noedge,nogru,noko,nobc}_s{0,1,2}.pt` and suites `t{0,1,2}/{a,b}/suite_egat_{noedge,nogru,noko,nobc}.json`, compared with the full-GRU model `suite_egat_h2.json` on the same seeds.
+
+**Regeneration.** After the archived `runs/` is merged into `code/runs/`, `PYTHONPATH=. python docs/paper/review/reconstruct_tables.py` recomputes Tables 5–9 from the suite JSONs. We ran this command on the extracted archive, and its output was byte-identical to the recorded `reconstruct_tables.out.md`. `python docs/paper/figures/make_figures.py` and `make_architecture.py` rebuild the figures. Tables 1–4 and 10 are descriptive.
+
+**Protocol history.** The confirmation of EGAT without GRU followed the protocol `docs/paper/protocol_nogru.md`. That protocol fixes the model, the margin rule, the confirmation topologies 40–59, the criteria and the decision rule. Four records date it:
+
+1. File-system time: the protocol file was created at 2026-11-07 02:31:58 (+07:00) and has not been modified since.
+2. Launch: `runs/v10/events.log` records `nogru start` at 02:59:19. The launching script, `runs/v10/nogru.sh`, was created at 02:59:13 and cites the protocol on its second line.
+3. Confirmation outputs: all 82 suite files evaluated on topologies 40–59 were written between 04:16 and 05:11 the same morning. No earlier file uses those seeds; topologies 20–39 were the latest previously used.
+4. Commit fields: those 82 files record `8aaaf1c-dirty`. Commit `8aaaf1c` (2026-11-06 23:17) does not contain the protocol, so the protocol then existed only as an uncommitted working-tree file.
+
+The protocol was first committed in `be22ad0` at 09:42:30, after the runs. Its committed blob (`de8b3b5`) is identical to the file created at 02:31, so the text was not edited after the results were seen. The pre-registration date therefore rests on file-system timestamps and the event log, which are local records. Git does not independently timestamp it. We report this limitation as it stands.
+
+// Authors' status: RESOLVED – A self-contained, commit-stamped archive (`NW14_EGAT_supplement_fb58cad.zip`) now provides the code, configuration, all checkpoints, environment and ns-3 build records, full-precision outputs, seed map, settings (a)/(b), the three-seed ablation, both ns-3 MAC settings, table-regeneration commands verified to reproduce Tables 5–9 exactly, and the dated protocol history, which shows the protocol file was written before the 40–59 evaluation but committed to git only afterwards.
